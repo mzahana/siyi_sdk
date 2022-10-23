@@ -11,12 +11,6 @@ crc16 module which is included with this package
 - python setup.py build
 - sudo python setup.py install
 
-55 66 01 00 00 00 00 01 64 c4
-
-acquire gimbal att: 55 66 01 00 00 00 00 0d e8 05
-
-zoom 1: 55 66 01 01 00 00 00 05 01 8d 64
-
 """
 
 import socket
@@ -37,7 +31,10 @@ class ZR10SDK:
         self._server_ip = server_ip
         self._port = port
 
+        self._BUFF_SIZE=1024
+
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._socket.settimeout(1) # 1 second timeout for recvfrom()
 
     def toHex(self, val, nbits):
         """
@@ -73,7 +70,16 @@ class ZR10SDK:
         --
         msg [str] Message to send
         """
-        pass
+        b = bytes.fromhex(msg)
+        self._socket.sendto(b, (self._server_ip, self._port))
+
+    def rcvMsg(self):
+        data=None
+        try:
+            data,addr = self._socket.recvfrom(self._BUFF_SIZE)
+        except Exception as e:
+            print("Error: {}".format(e))
+        return data
 
     def decodeMsg(self) -> None:
         """
@@ -89,6 +95,9 @@ class ZR10SDK:
             b = bytes.fromhex(msg)
             int_crc = crc16.crc16xmodem(b)
             str_crc = format(int_crc, 'x')
+            # Make sure we get 4 characters
+            if len(str_crc)==3:
+                str_crc = "0"+str_crc
             c1 = str_crc[2:]
             c2 = str_crc[0:2]
             crc = c1+c2
@@ -348,14 +357,75 @@ class ZR10SDK:
         data_len = "0000"
         cmd_id = "0d"
         return self.encodeMsg(data_len, data, cmd_id)
+    
+    def getFirmwareVersion(self):
+        """
+        Sends msg to request firmware version
+        """
+        msg = self.acquireFirmwareVersionMsg()
+        print(msg)
+        if len(msg)>0:
+            self.sendMsg(msg)
+            # Get feedback, timesout after 1 second
+            server_msg = self.rcvMsg()
+            if server_msg is not None:
+                # TODO decode msg
+                print("Server msg: ",server_msg)
+                return server_msg
+            else:
+                print("[getFirmwareVersion] Did not get feedback from server")
+                return None
+        else:
+            print("[getFirmwareVersion] Could not construct msg")
 
-        
+    def getGimbalAttitude(self):
+        """
+        Sends msg to request gimbal attitude
+        """
+        msg = self.gimbalAttitudeMsg()
+        print(msg)
+        if len(msg)>0:
+            self.sendMsg(msg)
+            # Get feedback
+            server_msg = self.rcvMsg()
+            if server_msg is not None:
+                # TODO decode msg
+                print("Server msg: ",server_msg)
+                return server_msg
+            else:
+                print("[getGimbalAttitude] Did not get feedback from server")
+                return None
+        else:
+            print("[getGimbalAttitude] Could not construct msg")
 
+    def getHardwareID(self):
+        """
+        Sends msg to request hardware ID
+        """
+        msg = self.acquireHardwareIdMsg()
+        print(msg)
+        if len(msg)>0:
+            self.sendMsg(msg)
+            # Get feedback
+            server_msg = self.rcvMsg()
+            if server_msg is not None:
+                # TODO decode msg
+                print("Server msg: ",server_msg)
+                return server_msg
+            else:
+                print("[getHardwareID] Did not get feedback from server")
+                return None
+        else:
+            print("[getHardwareID] Could not construct msg")
 
 
 
 def test():
-    pass
+    cam = ZR10SDK(server_ip="127.0.0.1", port=5005)
 
-if __name__ == "__main___":
+    cam.getGimbalAttitude()
+    cam.getFirmwareVersion()
+    cam.getHardwareID()
+
+if __name__ == "__main__":
     test()
