@@ -6,7 +6,7 @@ Email: mohamedashraf123@gmail.com
 Copyright 2022
 
 Requirements:
-- crc16 module which is included with this package
+crc16 module which is included with this package
 - cd crc16-0.1.1
 - python setup.py build
 - sudo python setup.py install
@@ -38,6 +38,16 @@ class ZR10SDK:
         self._port = port
 
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    def toHex(self, val, nbits):
+        """
+        Converts an integer to hexdecimal.
+        Useful for negative integers where hex() doesn't work as expected
+        """
+        h = format((val + (1 << nbits)) % (1 << nbits),'x')
+        if len(h)==1:
+            h="0"+h
+        return h
 
     def connect(self) -> bool:
         """
@@ -71,7 +81,7 @@ class ZR10SDK:
         """
         pass
 
-    def calcCRC16(self, msg: str) -> str:
+    def calcCRC16(self, msg: str):
         """
         Calculates the two bytes CRC16, with swaped order, and returns them as a string
         """
@@ -133,7 +143,7 @@ class ZR10SDK:
         cmd_id = "02"
         return self.encodeMsg(data_len, data, cmd_id)
 
-    def autFocusMsg(self) -> str:
+    def autoFocusMsg(self) -> str:
         """
         Prepares the Auto Focus message, and returns it as a string
 
@@ -146,24 +156,41 @@ class ZR10SDK:
         cmd_id = "04"
         return self.encodeMsg(data_len, data, cmd_id)
 
-    def zoomMsg(self, flag) -> str:
+    def stopZoomMsg(self, flag) -> str:
         """
-        Prepares the Manual Zoom message, and returns it as a string
-
-        Params
-        --
-        flag: [int] 1: start zoom in, 0, stop zoom, -1: start zoom out
+        Prepares the Stop Zoom message, and returns it as a string
 
         Returns
         --
         [str] encoded msg if available. Otherwise, returns empty string
         """
-        if flag==1:
-            data="01"
-        if flag==0:
-            data="00"
-        if flag==-1:
-            data="ff"
+        data="00"
+        data_len = "0100"
+        cmd_id = "05"
+        return self.encodeMsg(data_len, data, cmd_id)
+
+    def zoomInMsg(self) -> str:
+        """
+        Prepares the Manual Zoom In message, and returns it as a string
+
+        Returns
+        --
+        [str] encoded msg if available. Otherwise, returns empty string
+        """
+        data="01"
+        data_len = "0100"
+        cmd_id = "05"
+        return self.encodeMsg(data_len, data, cmd_id)
+
+    def zoomOutMsg(self) -> str:
+        """
+        Prepares the Manual Zoom Out message, and returns it as a string
+
+        Returns
+        --
+        [str] encoded msg if available. Otherwise, returns empty string
+        """
+        data="ff"
         data_len = "0100"
         cmd_id = "05"
         return self.encodeMsg(data_len, data, cmd_id)
@@ -180,15 +207,149 @@ class ZR10SDK:
         --
         [str] encoded msg if available. Otherwise, returns empty string
         """
-        if flag==1:
-            data="01"
-        if flag==0:
-            data="00"
-        if flag==-1:
-            data="ff"
+        data=self.toHex(flag, 8)
         data_len = "0100"
         cmd_id = "06"
         return self.encodeMsg(data_len, data, cmd_id)
+
+    def gimbalRotationMsg(self, yaw_speed, pitch_speed) -> str:
+        """
+        Prepares the Gimbal Rotation message, and returns it as a string
+
+        Params
+        --
+        yaw_speed: [int] -100~0~100: Negative and positive represent two directions, higher or lower the number is away from 0, faster the rotation speed is. Send 0 when released from control command and gimbal stops rotation.
+        pitch_speed: [int] -100~0~100: Negative and positive represent two directions, higher or lower the number is away from 0, faster the rotation speed is. Send 0 when released from control command and gimbal stops rotation.
+
+        Returns
+        --
+        [str] encoded msg if available. Otherwise, returns empty string
+        """
+        data1=self.toHex(yaw_speed, 8)
+        data2=self.toHex(pitch_speed, 8)
+        data=data1+data2
+        data_len = "0200"
+        cmd_id = "07"
+        return self.encodeMsg(data_len, data, cmd_id)
+
+    def centerMsg(self) -> str:
+        """
+        Prepares the Center Rotation message, and returns it as a string
+
+        Returns
+        --
+        [str] encoded msg if available. Otherwise, returns empty string
+        """
+        data="01"
+        data_len = "0100"
+        cmd_id = "08"
+        return self.encodeMsg(data_len, data, cmd_id)
+
+    def gimbalInfoMsg(self) -> str:
+        """
+        Prepares the Acquire Gimbal Configuration message, and returns it as a string
+
+        Returns
+        --
+        [str] encoded msg if available. Otherwise, returns empty string
+        """
+        data=""
+        data_len = "0000"
+        cmd_id = "0a"
+        return self.encodeMsg(data_len, data, cmd_id)
+
+    def functionInfoMsg(self) -> str:
+        """
+        Prepares the Function Feedback Information message, and returns it as a string
+
+        Returns
+        --
+        [str] encoded msg if available. Otherwise, returns empty string
+        """
+        data=""
+        data_len = "0000"
+        cmd_id = "0b"
+        return self.encodeMsg(data_len, data, cmd_id)
+
+    def takePhotoMsg(self) -> str:
+        """
+        Prepares the Take Photo message, and returns it as a string
+
+        Returns
+        --
+        [str] encoded msg if available. Otherwise, returns empty string
+        """
+        data="00"
+        data_len = "0100"
+        cmd_id = "0c"
+        return self.encodeMsg(data_len, data, cmd_id)
+
+    def startStopRecordingMsg(self) -> str:
+        """
+        Prepares the Start/Stop Recording message, and returns it as a string
+
+        Returns
+        --
+        [str] encoded msg if available. Otherwise, returns empty string
+        """
+        data="02"
+        data_len = "0100"
+        cmd_id = "0c"
+        return self.encodeMsg(data_len, data, cmd_id)
+
+    def lockModeMsg(self) -> str:
+        """
+        Prepares the Lock Mode message, and returns it as a string.
+
+        Returns
+        --
+        [str] encoded msg if available. Otherwise, returns empty string
+        """
+        data="03"
+        data_len = "0100"
+        cmd_id = "0c"
+        return self.encodeMsg(data_len, data, cmd_id)
+
+    def followModeMsg(self) -> str:
+        """
+        Prepares the Follow Mode message, and returns it as a string.
+
+        Returns
+        --
+        [str] encoded msg if available. Otherwise, returns empty string
+        """
+        data="04"
+        data_len = "0100"
+        cmd_id = "0c"
+        return self.encodeMsg(data_len, data, cmd_id)
+
+    def fpvModeMsg(self) -> str:
+        """
+        Prepares the FPV Mode message, and returns it as a string.
+
+        Returns
+        --
+        [str] encoded msg if available. Otherwise, returns empty string
+        """
+        data="05"
+        data_len = "0100"
+        cmd_id = "0c"
+        return self.encodeMsg(data_len, data, cmd_id)
+
+    def gimbalAttitudeMsg(self) -> str:
+        """
+        Prepares the Gimbal Attitude message, and returns it as a string.
+
+        Returns
+        --
+        [str] encoded msg if available. Otherwise, returns empty string
+        """
+        data=""
+        data_len = "0000"
+        cmd_id = "0d"
+        return self.encodeMsg(data_len, data, cmd_id)
+
+        
 
 
 
