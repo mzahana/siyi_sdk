@@ -1,0 +1,8 @@
+0.1.1:
+
+  * Support of Python 2.5.
+    Issue #1: http://code.google.com/p/pycrc16/issues/detail?id=1
+
+0.1.0:
+
+  * Initial release.
