@@ -595,7 +595,7 @@ class ZR10SDK:
             vals = self.getGimbalAttitude()
             if vals is None:
                 print("[setGimbalAttitude] Error. Gimbal attitude is None")
-                continue
+                break
 
             y,p,r, y_s, p_s, r_s = vals[0], vals[1], vals[2], vals[3], vals[4], vals[5]
             yaw_err = -yaw + y
@@ -636,7 +636,7 @@ def test():
     cam.centerGimbal()
     sleep(2)
 
-    cam.setGimbalAttitude(-40,-90)
+    cam.setGimbalAttitude(0,-80)
 
     y,p,r,y_speed, p_speed, r_speed = cam.getGimbalAttitude()
     print("Attitude [deg] yaw, pitch, roll: ", y,p,r)
