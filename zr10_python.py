@@ -14,6 +14,7 @@ crc16 module which is included with this package
 """
 
 import socket
+from time import sleep
 import crc16
 
 class ZR10SDK:
@@ -47,6 +48,15 @@ class ZR10SDK:
         if len(h)==1:
             h="0"+h
         return h
+    def toInt(self, hexval):
+        """
+        Ref: https://www.delftstack.com/howto/python/python-hex-to-int/
+        """
+        bits = 16
+        val = int(hexval, bits)
+        if val & (1 << (bits-1)):
+            val -= 1 << bits
+        return val
 
     def connect(self) -> bool:
         """
@@ -89,7 +99,7 @@ class ZR10SDK:
 
         Params
         --
-        msg: [str] full message received form server
+        msg: [str] full message received from server
 
         Returns
         --
@@ -439,7 +449,7 @@ class ZR10SDK:
             if len(hex_str)==0:
                 return None
 
-            hw_id = int(hex_str, base=16)
+            hw_id = hex_str #int(hex_str, base=16)
             return hw_id
                 
         else:
@@ -461,6 +471,7 @@ class ZR10SDK:
         roll_velocity: [float] roll speed in degrees/second
         """
         msg = self.gimbalAttitudeMsg()
+        print("[getGimbalAttitude] attitude msg: ", msg)
         if len(msg)>0:
             self.sendMsg(msg)
             # Get feedback, timesout after 1 second
@@ -469,22 +480,57 @@ class ZR10SDK:
                 print("[getGimbalAttitude] Did not get feedback from server within 1 second")
                 return None
 
+            print("[getGimbalAttitude] Server msg: ", server_msg.hex())
+
             # TODO decode msg
             hex_str = self.decodeMsg(server_msg.hex())
             print("[getGimbalAttitude] Data hex sting: ", hex_str)
             if len(hex_str)==0:
                 return None
 
-            yaw_deg = int(hex_str[0:4], base=16) /10.
-            pitch_deg = int(hex_str[4:8], base=16) /10.
-            roll_deg = int(hex_str[8:12], base=16) /10.
-            yaw_velocity = int(hex_str[12:16], base=16) /10.
-            pitch_velocity = int(hex_str[16:20], base=16) /10.
-            roll_velocity = int(hex_str[20:24], base=16) /10.
+            yaw_deg = self.toInt(hex_str[2:4]+hex_str[0:2]) /10.
+            pitch_deg = self.toInt(hex_str[6:8]+hex_str[4:6]) /10.
+            roll_deg = self.toInt(hex_str[10:12]+hex_str[8:10]) /10.
+            yaw_velocity = self.toInt(hex_str[14:16]+hex_str[12:14]) /10.
+            pitch_velocity = self.toInt(hex_str[18:20]+hex_str[16:18]) /10.
+            roll_velocity = self.toInt(hex_str[22:24]+hex_str[20:22]) /10.
             return yaw_deg, pitch_deg, roll_deg, yaw_velocity, pitch_velocity, roll_velocity
                 
         else:
             print("[getGimbalAttitude] Could not construct msg")
+            return None
+
+   
+    def centerGimbal(self):
+        """
+        Sends msg to set gimbal at the center position
+
+        Returns
+        --
+        [bool] True if successful. False otherwise
+        """
+        msg = self.centerMsg()
+        if len(msg)>0:
+            self.sendMsg(msg)
+            # Get feedback, timesout after 1 second
+            server_msg = self.rcvMsg()
+            if server_msg is None:
+                print("[centerGimbal] Did not get feedback from server within 1 second")
+                return None
+
+            # TODO decode msg
+            hex_str = self.decodeMsg(server_msg.hex())
+            print("[centerGimbal] Data hex sting: ", hex_str)
+            if len(hex_str)==0:
+                return None
+
+            flag = int(hex_str, base=16)
+            if flag==1:
+                return True
+            else:
+                return False
+        else:
+            print("[centerGimbal] Could not construct msg")
             return None
 
     def setGimbalSpeed(self, yaw_speed, pitch_speed):
@@ -524,13 +570,53 @@ class ZR10SDK:
             print("[setGimbalSpeed] Could not construct msg")
             return None
 
-    def setGimbalAttitude(self, yaw, pitch):
+    def setGimbalAttitude(self, yaw, pitch, err_thresh=1):
         """
         Sets gimbal attitude angles yaw and pitch in degrees
-        """
-        # TODO 
-        pass
 
+        Params
+        --
+        yaw: [float] desired yaw in degrees
+        pitch: [float] desired pitch in degrees
+        err_thresh: [float] acceptable error threshold, in degrees, to stop correction
+        """
+        if (pitch >25 or pitch <-90):
+            print("[setGimbalAttitude] ERROR. desired pitch is outside controllable range -90~25")
+            return
+
+        if (yaw >45 or yaw <-45):
+            print("[setGimbalAttitude] ERROR. desired yaw is outside controllable range -45~45")
+            return
+
+        # TODO 
+        th = err_thresh
+        gain = 3
+        while(True):
+            vals = self.getGimbalAttitude()
+            if vals is None:
+                print("[setGimbalAttitude] Error. Gimbal attitude is None")
+                continue
+
+            y,p,r, y_s, p_s, r_s = vals[0], vals[1], vals[2], vals[3], vals[4], vals[5]
+            yaw_err = -yaw + y
+            pitch_err = pitch - p
+
+            print(" yaw_err= ", yaw_err)
+            print(" pitch_err= ", pitch_err)
+
+            if (abs(yaw_err) <= th and abs(pitch_err)<=th):
+                ret = self.setGimbalSpeed(0, 0)
+                print("[setGimbalAttitude] Goal reached")
+                break
+            y_speed_sp = max(min(100, int(gain*yaw_err)), -100)
+            p_speed_sp = max(min(100, int(gain*pitch_err)), -100)
+            print("[setGimbalAttitude] yaw speed setpoint= ", y_speed_sp)
+            print("[setGimbalAttitude] pitch speed setpoint= ", p_speed_sp)
+            ret = self.setGimbalSpeed(y_speed_sp, p_speed_sp)
+            if(not ret):
+                print("[setGimbalAttitude] Could not set gimbal speed")
+                break
+            sleep(0.1)
 
 
 def test():
@@ -540,7 +626,24 @@ def test():
     # cam.getGimbalAttitude()
     fw_ver = cam.getFirmwareVersion()
     print("[test] FW version: ", fw_ver)
-    # cam.getHardwareID()
+    hw_id = cam.getHardwareID()
+    print("HW ID: ", hw_id)
+
+    # cam.setGimbalSpeed(50,0)
+    # sleep(0.5)
+    # cam.setGimbalSpeed(0,0)
+
+    cam.centerGimbal()
+    sleep(2)
+
+    cam.setGimbalAttitude(-40,-90)
+
+    y,p,r,y_speed, p_speed, r_speed = cam.getGimbalAttitude()
+    print("Attitude [deg] yaw, pitch, roll: ", y,p,r)
+    print("Attitude speed [deg/s]: ", y_speed,p_speed,r_speed)
+
+   
+    
 
 if __name__ == "__main__":
     test()
