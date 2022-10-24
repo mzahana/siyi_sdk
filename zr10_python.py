@@ -28,6 +28,8 @@ class ZR10SDK:
         server_ip [str] IP address of the camera
         port: [int] UDP port of the camera
         """
+        self._debug= True # print debug messages
+
         self._server_ip = server_ip
         self._port = port
 
@@ -81,11 +83,44 @@ class ZR10SDK:
             print("Error: {}".format(e))
         return data
 
-    def decodeMsg(self) -> None:
+    def decodeMsg(self, msg) -> None:
         """
-        Decodes messages that are received on the rcv buffer, and updates the corresponding fields.
+        Decodes messages that are received on the rcv buffer, and returns the DATA fields.
+
+        Params
+        --
+        msg: [str] full message received form server
+
+        Returns
+        --
+        [str] string of hexadecimal of DATA fields.
         """
-        pass
+        DATA = ""
+        if len(msg)==0:
+            print("[decodeMsg] Error msg is empty")
+            return DATA
+
+        # check crc16, if msg is OK!
+        msg_crc=msg[-4:] # last 4 characters
+        payload=msg[:-4]
+        crc=self.calcCRC16(payload)
+        if crc!=msg_crc:
+            print("[decodeMsg] CRC16 is not valid. Message is corrupted!")
+            return DATA
+        
+        l1 = msg[6:8]
+        l2 = msg[8:10]
+        data_len = l2+l1
+        data_len = int('0x'+data_len, base=16)
+        char_len = data_len*2
+        
+        cmd_id = msg[14:16]
+        
+        DATA = msg[16:16+char_len]
+
+        return DATA
+
+
 
     def calcCRC16(self, msg: str):
         """
@@ -103,7 +138,7 @@ class ZR10SDK:
             crc = c1+c2
             return crc
         except Exception as e:
-            print("Error: {}".format(e))
+            print(" [calcCRC16] Error: {}".format(e))
             return None
 
     def encodeMsg(self, data_len, data, cmd_id):
@@ -362,70 +397,150 @@ class ZR10SDK:
         """
         Sends msg to request firmware version
         """
+
         msg = self.acquireFirmwareVersionMsg()
-        print(msg)
         if len(msg)>0:
             self.sendMsg(msg)
             # Get feedback, timesout after 1 second
             server_msg = self.rcvMsg()
-            if server_msg is not None:
-                # TODO decode msg
-                print("Server msg: ",server_msg)
-                return server_msg
-            else:
-                print("[getFirmwareVersion] Did not get feedback from server")
+            if server_msg is None:
+                print("[getFirmwareVersion] Did not get feedback from server within 1 second")
                 return None
+
+            # TODO decode msg
+            hex_str = self.decodeMsg(server_msg.hex())
+            print("[getFirmwareVersion] Data hex sting: ", hex_str)
+            if len(hex_str)==0:
+                return None
+
+            firmware_ver = hex_str[8:16]
+            return firmware_ver
+                
         else:
             print("[getFirmwareVersion] Could not construct msg")
-
-    def getGimbalAttitude(self):
-        """
-        Sends msg to request gimbal attitude
-        """
-        msg = self.gimbalAttitudeMsg()
-        print(msg)
-        if len(msg)>0:
-            self.sendMsg(msg)
-            # Get feedback
-            server_msg = self.rcvMsg()
-            if server_msg is not None:
-                # TODO decode msg
-                print("Server msg: ",server_msg)
-                return server_msg
-            else:
-                print("[getGimbalAttitude] Did not get feedback from server")
-                return None
-        else:
-            print("[getGimbalAttitude] Could not construct msg")
+            return None
 
     def getHardwareID(self):
         """
         Sends msg to request hardware ID
         """
         msg = self.acquireHardwareIdMsg()
-        print(msg)
         if len(msg)>0:
             self.sendMsg(msg)
-            # Get feedback
+            # Get feedback, timesout after 1 second
             server_msg = self.rcvMsg()
-            if server_msg is not None:
-                # TODO decode msg
-                print("Server msg: ",server_msg)
-                return server_msg
-            else:
-                print("[getHardwareID] Did not get feedback from server")
+            if server_msg is None:
+                print("[getHardwareID] Did not get feedback from server within 1 second")
                 return None
+
+            # TODO decode msg
+            hex_str = self.decodeMsg(server_msg.hex())
+            print("[getHardwareID] Data hex sting: ", hex_str)
+            if len(hex_str)==0:
+                return None
+
+            hw_id = int(hex_str, base=16)
+            return hw_id
+                
         else:
             print("[getHardwareID] Could not construct msg")
+            return None
+
+    def getGimbalAttitude(self):
+        """
+        Sends msg to request gimbal attitude, and returns attitude in degrees, and attitude speed in deg/s.
+        Values are accurate to one decimal place.
+
+        Returns
+        --
+        yaw_deg: [float] yaw in degrees
+        pitch_deg: [float] pitch in degrees
+        roll_deg: [float] roll in degrees
+        yaw_velocity: [float] yaw speed in degrees/second
+        pitch_velocity: [float] pitch speed in degrees/second
+        roll_velocity: [float] roll speed in degrees/second
+        """
+        msg = self.gimbalAttitudeMsg()
+        if len(msg)>0:
+            self.sendMsg(msg)
+            # Get feedback, timesout after 1 second
+            server_msg = self.rcvMsg()
+            if server_msg is None:
+                print("[getGimbalAttitude] Did not get feedback from server within 1 second")
+                return None
+
+            # TODO decode msg
+            hex_str = self.decodeMsg(server_msg.hex())
+            print("[getGimbalAttitude] Data hex sting: ", hex_str)
+            if len(hex_str)==0:
+                return None
+
+            yaw_deg = int(hex_str[0:4], base=16) /10.
+            pitch_deg = int(hex_str[4:8], base=16) /10.
+            roll_deg = int(hex_str[8:12], base=16) /10.
+            yaw_velocity = int(hex_str[12:16], base=16) /10.
+            pitch_velocity = int(hex_str[16:20], base=16) /10.
+            roll_velocity = int(hex_str[20:24], base=16) /10.
+            return yaw_deg, pitch_deg, roll_deg, yaw_velocity, pitch_velocity, roll_velocity
+                
+        else:
+            print("[getGimbalAttitude] Could not construct msg")
+            return None
+
+    def setGimbalSpeed(self, yaw_speed, pitch_speed):
+        """
+        Sends msg to set gimbal yaw and pitch speeds
+
+        Params
+        --
+        yaw_speed: [int] -100~0~100. Percentage of max speed
+        pitch_speed: [int] same as  yaw_speed
+
+        Returns
+        --
+        [bool] True if successful. False otherwise
+        """
+        msg = self.gimbalRotationMsg(yaw_speed, pitch_speed)
+        if len(msg)>0:
+            self.sendMsg(msg)
+            # Get feedback, timesout after 1 second
+            server_msg = self.rcvMsg()
+            if server_msg is None:
+                print("[setGimbalSpeed] Did not get feedback from server within 1 second")
+                return None
+
+            # TODO decode msg
+            hex_str = self.decodeMsg(server_msg.hex())
+            print("[setGimbalSpeed] Data hex sting: ", hex_str)
+            if len(hex_str)==0:
+                return None
+
+            flag = int(hex_str, base=16)
+            if flag==1:
+                return True
+            else:
+                return False
+        else:
+            print("[setGimbalSpeed] Could not construct msg")
+            return None
+
+    def setGimbalAttitude(self, yaw, pitch):
+        """
+        Sets gimbal attitude angles yaw and pitch in degrees
+        """
+        # TODO 
+        pass
 
 
 
 def test():
-    cam = ZR10SDK(server_ip="127.0.0.1", port=5005)
+    # cam = ZR10SDK(server_ip="127.0.0.1", port=5005)
+    cam = ZR10SDK()
 
-    cam.getGimbalAttitude()
-    cam.getFirmwareVersion()
-    cam.getHardwareID()
+    # cam.getGimbalAttitude()
+    fw_ver = cam.getFirmwareVersion()
+    print("[test] FW version: ", fw_ver)
+    # cam.getHardwareID()
 
 if __name__ == "__main__":
     test()
