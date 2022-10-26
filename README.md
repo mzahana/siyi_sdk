@@ -6,7 +6,7 @@ Python implementation of the SDK of the ZR10 camera-gimbal system.
 
 **If you find this code useful, kindly give a STAR to this repository. Thanks!**
 
-# Installation
+# Setup
 * Clone this package
     ```bash
     git clone https://github.com/mzahana/zr10_sdk.git
@@ -17,7 +17,14 @@ Python implementation of the SDK of the ZR10 camera-gimbal system.
     python setup.py build
     sudo python setup.py install
     ```
-* Done. 
+* Connect the camera to PC or onboard computer using the ethernet cable that comes with it. The current implementation uses UDP communication.
+* Power on the camera
+* Do the PC wired network configuration. Make sure to assign a manual IP address to your computer
+  * For example, IP `192.168.144.12`
+  * Gateway `192.168.144.25`
+  * Netmask `255.255.255.0`
+* Done.
+
 # Usage
 * You can go back to the `zr10_sdk` directory and run the `test_*.py` scripts to learn how to use the sdk implementation
 
