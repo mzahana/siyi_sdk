@@ -1,4 +1,4 @@
-# zr10_sdd
+# zr10_sdk
 Python implementation of the SDK of the ZR10 camera-gimbal system.
 
 * Camera webpage: http://en.siyi.biz/en/Gimbal%20Camera/ZR10/overview/
