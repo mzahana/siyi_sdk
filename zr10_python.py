@@ -36,7 +36,7 @@ class ZR10SDK:
         if self._debug:
             d_level = logging.DEBUG
         else:
-            d_level = logging.ERROR
+            d_level = logging.INFO
         logging.basicConfig(format=LOG_FORMAT, level=d_level)
         self._logger = logging.getLogger(__name__)
         
@@ -828,8 +828,8 @@ class ZR10SDK:
             yaw_err = -yaw + y
             pitch_err = pitch - p
 
-            print(" yaw_err= ", yaw_err)
-            print(" pitch_err= ", pitch_err)
+            self._logger.debug("yaw_err= %s", yaw_err)
+            self._logger.debug("pitch_err= %s", pitch_err)
 
             if (abs(yaw_err) <= th and abs(pitch_err)<=th):
                 ret = self.setGimbalSpeed(0, 0)
