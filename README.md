@@ -24,3 +24,8 @@ Python implementation of ZR10 SDK by SIYI
     ```python
     from zr10_python import ZR10SDK
     ```
+* Example: To run the `test_gimbal_rotation.py` run,
+    ```bash
+    cd zr10_sdk
+    python3 test_gimbal_rotation.py
+    ```
