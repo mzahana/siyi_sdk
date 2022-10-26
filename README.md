@@ -1,9 +1,10 @@
-# zr10_sdk
+# zr10_sdd
 Python implementation of ZR10 SDK by SIYI
 
 * Camera webpage: http://en.siyi.biz/en/Gimbal%20Camera/ZR10/overview/
 * Documentation: http://en.siyi.biz/en/Gimbal%20Camera/ZR10/download/
 
+**If you find this code useful, kindly give a STAR to this repository. Thanks!**
 # Installation
 * Clone this package
     ```bash
