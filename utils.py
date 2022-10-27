@@ -23,7 +23,7 @@ def toHex(intval, nbits):
         h="0"+h
     return h
 
-def toInt(self, hexval):
+def toInt(hexval):
     """
     Converts hexidecimal value to an integer number, which can be negative
     Ref: https://www.delftstack.com/howto/python/python-hex-to-int/
