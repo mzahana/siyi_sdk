@@ -389,8 +389,8 @@ class SIYIMESSAGE:
         - yaw_speed [int] in degrees
         - pitch_speed [int] in degrees
         """
-        data1=self.toHex(yaw_speed, 8)
-        data2=self.toHex(pitch_speed, 8)
+        data1=toHex(yaw_speed, 8)
+        data2=toHex(pitch_speed, 8)
         data=data1+data2
         cmd_id = COMMAND.GIMBAL_ROT
         return self.encodeMsg(data, cmd_id)
@@ -429,7 +429,7 @@ class SIYISDK:
         self._BUFF_SIZE=1024
 
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._rcv_wait_t = 1.0 # Receiving wait time
+        self._rcv_wait_t = 0.5 # Receiving wait time
         self._socket.settimeout(self._rcv_wait_t) # 1 second timeout for recvfrom()
 
         self._connected = False
@@ -756,9 +756,7 @@ class SIYISDK:
                 self._logger.warning("Did not get feedback from camera")
                 return False
             
-            # Decode mesage
-            data_s = self._in_msg.decodeMsg(server_msg.hex())
-            
+            # Decode mesage            
             val = self._in_msg.decodeMsg(server_msg.hex())
             if val is None:
                 return False
@@ -775,25 +773,372 @@ class SIYISDK:
             self._logger.error("Could not construct msg")
             return False
 
-    
+    def setZoom(self, flag):
+        """
+        Sends zoom request
+
+        Params
+        --
+        flag: [int] 1: start zoom in, 0: stop zoom, -1: start zoom out
+        
+        Returns
+        --
+        zoom_level: [int] 0~30. -1 if it fails
+        """
+        if (flag == 1):
+            msg=self._out_msg.zoomInMsg()
+        elif (flag == -1):
+            msg=self._out_msg.zoomOutMsg()
+        else:
+            msg=self._out_msg.stopZoomMsg()
+
+        if len(msg)>0:
+            good = self.sendMsg(msg)
+            if not good:
+                self._logger.error("Could not send data. Check communication")
+                return -1
+
+            # Get feedback, timesout after 1 second
+            server_msg = self.rcvMsg()
+            self._logger.debug("server_msg hex string: %s", server_msg.hex())
+
+            if server_msg is None:
+                self._logger.warning("Did not get feedback from camera")
+                return -1
+            
+            # Decode mesage            
+            val = self._in_msg.decodeMsg(server_msg.hex())
+            if val is None:
+                return -1
+            data_str, data_len, cmd_id = val[0], val[1], val[2]
+            self._logger.debug("Data hex string: %s", data_str)
+
+            zoom_level = int(data_str[2:4]+data_str[0:2], base=16) /10.
+            return zoom_level
+                
+        else:
+            self._logger.error("Could not construct msg")
+            return -1
+
+    def setFocus(self, flag):
+        """
+        Sends manual focus request
+
+        Params
+        --
+        flag: [int] 1: Long shot, 0: stop manual focus, -1: close shot
+        
+        Returns
+        --
+        True: Success
+        False: Fail
+        """
+        if flag==1:
+            msg = self._out_msg.longFocusMsg()
+        elif flag==-1:
+            msg = self._out_msg.closeFocusMsg()
+        else:
+            msg = self._out_msg.stopFocusMsg()
+        if len(msg)>0:
+            good = self.sendMsg(msg)
+            if not good:
+                self._logger.error("Could not send data. Check communication")
+                return False
+
+            # Get feedback, timesout after 1 second
+            server_msg = self.rcvMsg()
+            self._logger.debug("server_msg hex string: %s", server_msg.hex())
+
+            if server_msg is None:
+                self._logger.warning("Did not get feedback from camera")
+                return False
+            
+            # Decode mesage            
+            val = self._in_msg.decodeMsg(server_msg.hex())
+            if val is None:
+                return False
+            data_str, data_len, cmd_id = val[0], val[1], val[2]
+            self._logger.debug("Data hex string: %s", data_str)
+
+            ret = int(data_str, base=16)
+            
+            return bool(ret)
+                
+        else:
+            self._logger.error("Could not construct msg")
+            return False
+
+    def centerGimbal(self):
+        """
+        Sends msg to set gimbal at the center position
+
+        Returns
+        --
+        [bool] True if successful. False otherwise
+        """
+        msg = self._out_msg.centerMsg()
+        if len(msg)>0:
+            good = self.sendMsg(msg)
+            if not good:
+                self._logger.error("Could not send data. Check communication")
+                return False
+
+            # Get feedback, timesout after 1 second
+            server_msg = self.rcvMsg()
+
+            if server_msg is None:
+                self._logger.warning("Did not get feedback from camera")
+                return False
+
+            self._logger.debug("server_msg hex string: %s", server_msg.hex())
+            
+            # Decode mesage            
+            val = self._in_msg.decodeMsg(server_msg.hex())
+            if val is None:
+                return False
+            data_str, data_len, cmd_id = val[0], val[1], val[2]
+            self._logger.debug("Data hex string: %s", data_str)
+
+            flag = int(data_str, base=16)
+            if flag==1:
+                return True
+            else:
+                return False
+        else:
+            self._logger.error("Could not construct msg")
+            return False
+
+    def setGimbalSpeed(self, yaw_speed, pitch_speed):
+        """
+        Sends msg to set gimbal yaw and pitch speeds
+
+        Params
+        --
+        yaw_speed: [int] -100~0~100. Percentage of max speed
+        pitch_speed: [int] same as  yaw_speed
+
+        Returns
+        --
+        [bool] True if successful. False otherwise
+        """
+        msg = self._out_msg.gimbalSpeedMsg(yaw_speed, pitch_speed)
+        if len(msg)>0:
+            good = self.sendMsg(msg)
+            if not good:
+                self._logger.error("Could not send data. Check communication")
+                return False
+
+            # Get feedback, timesout after 1 second
+            server_msg = self.rcvMsg()
+            self._logger.debug("server_msg hex string: %s", server_msg.hex())
+
+            if server_msg is None:
+                self._logger.warning("Did not get feedback from camera")
+                return False
+            
+            # Decode mesage            
+            val = self._in_msg.decodeMsg(server_msg.hex())
+            if val is None:
+                return False
+            data_str, data_len, cmd_id = val[0], val[1], val[2]
+            self._logger.debug("Data hex string: %s", data_str)
+
+            flag = int(data_str, base=16)
+            if flag==1:
+                return True
+            else:
+                return False
+        else:
+            self._logger.error("Could not construct msg")
+            return False
+
+    def setGimbalRotation(self, yaw, pitch, err_thresh=0.5, kp=4):
+        """
+        Sets gimbal attitude angles yaw and pitch in degrees
+
+        Params
+        --
+        yaw: [float] desired yaw in degrees
+        pitch: [float] desired pitch in degrees
+        err_thresh: [float] acceptable error threshold, in degrees, to stop correction
+        kp [float] proportional gain
+        """
+        if (pitch >25 or pitch <-90):
+            self._logger.error("desired pitch is outside controllable range -90~25")
+            return
+
+        if (yaw >45 or yaw <-45):
+            self._logger.error("Desired yaw is outside controllable range -45~45")
+            return
+
+        th = err_thresh
+        gain = kp
+        while(True):
+            vals = self.getGimbalAttitude()
+            if vals is None:
+                self._logger.warning("Gimbal attitude feedback is None. Not setting rotations")
+                break
+
+            y,p,r, y_s, p_s, r_s = vals[0], vals[1], vals[2], vals[3], vals[4], vals[5]
+            yaw_err = -yaw + y # NOTE for some reason it's reversed!!
+            pitch_err = pitch - p
+
+            self._logger.debug("yaw_err= %s", yaw_err)
+            self._logger.debug("pitch_err= %s", pitch_err)
+
+            if (abs(yaw_err) <= th and abs(pitch_err)<=th):
+                ret = self.setGimbalSpeed(0, 0)
+                self._logger.info("Goal rotation is reached")
+                break
+
+            y_speed_sp = max(min(100, int(gain*yaw_err)), -100)
+            p_speed_sp = max(min(100, int(gain*pitch_err)), -100)
+            self._logger.debug("yaw speed setpoint= %s", y_speed_sp)
+            self._logger.debug("pitch speed setpoint= %s", p_speed_sp)
+            ret = self.setGimbalSpeed(y_speed_sp, p_speed_sp)
+            if(not ret):
+                self._logger.warning("Could not set gimbal speed")
+                break
+
+            sleep(0.1) # command frequency
+
+    def takePhoto(self):
+        """
+        Sends a message to take a single photo
+
+        Returns
+        --
+        True: if success. False otherwise
+        """
+        msg = self._out_msg.takePhotoMsg()
+        if len(msg)>0:
+            good = self.sendMsg(msg)
+            if not good:
+                self._logger.error("Could not send data. Check communication")
+                return False
+
+        # NOTE ack is not yet implemented for photo
+        ack_code = self.getFuncFeedback()
+
+        if ack_code is None:
+            self._logger.warning("Could not get acknowledgement")
+            return False
+
+        if ack_code==0:
+            return True
+        else:
+            self._logger.error("Could not take photo. Error code: %s", ack_code)
+            return False
+
+    def toggleRecording(self):
+        """
+        Sends a message to toggle recording state. 
+        
+        Returns
+        --
+        [int] 1: Record is ON. Record is OFF. 2: TF card slot is empty. 3: Data loss, check SD card
+        """
+        msg = self._out_msg.recordMsg()
+        if len(msg)>0:
+            self.sendMsg(msg)
+            good = self.sendMsg(msg)
+            if not good:
+                self._logger.error("Could not send data. Check communication")
+                return False
+
+        ack_code = self.getFuncFeedback()
+        if ack_code is None:
+            self._logger.warning("Could not get acknowledgement")
+
+        if ack_code==4:
+            self._logger.error("Fail to record a video. Please check if TF card is inserted" )
+            return False
+
+        info=self.getGimbalInfo()
+        if info is None:
+            self._logger.warning("Could not get gimbal info for acknowledgement to check recording state")
+            return False
+
+        record_state= info[0]
+        
+        if record_state == 1:
+            self._logger.info("Recording is ON")
+            self._recording_on = True
+        elif record_state == 0:
+            self._logger.info("Recording is OFF")
+            self._recording_on = False
+        else:
+            self._logger.warning("Record state is unknown . Code: %s", record_state)
+
+        return record_state
 
 if __name__ == "__main__":
     cam = SIYISDK()
+    cam._debug=True
+    # cam._rcv_wait_t = 1.0
 
     fw = cam.getFirmwareVersion()
     print("Firmware version: ", fw)
-    hw = cam.getHardwareID()
-    print("Hardware ID: ", hw)
-    val = cam.getGimbalAttitude()
-    if val is not None:
-        print("Yaw deg: ", val[0])
-        print("pitch deg: ", val[1])
-        print("Roll deg: ", val[2])
-        print("Yaw speed: ", val[3])
-        print("Pitch speed: ", val[4])
-        print("Roll speed: ", val[5])
+    # hw = cam.getHardwareID()
+    # print("Hardware ID: ", hw)
+    # val = cam.getGimbalAttitude()
+    # if val is not None:
+    #     print("Yaw deg: ", val[0])
+    #     print("pitch deg: ", val[1])
+    #     print("Roll deg: ", val[2])
+    #     print("Yaw speed: ", val[3])
+    #     print("Pitch speed: ", val[4])
+    #     print("Roll speed: ", val[5])
 
-    val = cam.getGimbalInfo()
-    if val is not None:
-        print("Recording state: ", val[0])
-        print("Mounting Direction: ", val[1])
+    # val = cam.getGimbalInfo()
+    # if val is not None:
+    #     print("Recording state: ", val[0])
+    #     print("Mounting Direction: ", val[1])
+
+    # val = cam.setAutoFocus()
+    # print("Auto focus: ", val)
+
+    # val = cam.setZoom(1)
+    # print("Zoom in: ", val)
+    # sleep(2)
+    # val = cam.setZoom(0)
+    # print("Stop zoom: ", val)
+    # sleep(2)
+    # val = cam.setZoom(-1)
+    # print("Zoom out: ", val)
+    # sleep(2)
+    # val = cam.setZoom(0)
+    # print("Stop zoom: ", val)
+
+    # val = cam.setFocus(1)
+    # print("Manual focus, long: ", val)
+    # sleep(1)
+    # val = cam.setFocus(0)
+    # print("Manual focus, stop: ", val)
+    # sleep(1)
+    # val = cam.setFocus(-1)
+    # print("Manual focus, close: ", val)
+    # sleep(1)
+    # cam.setFocus(0)
+
+    # val = cam.setGimbalSpeed(10,10)
+    # sleep(1)
+    # val = cam.setGimbalSpeed(0,0)
+    # sleep(0.1)
+    # val = cam.centerGimbal()
+    # print("Center gimbal: ",val )
+
+    # cam.setGimbalRotation(45,-80, err_thresh=0.5, kp=4)
+    # val = cam.getGimbalAttitude()
+    # if val is not None:
+    #     yaw = val[0]
+    #     pitch = val[1]
+
+    #     print("Current yaw= ", yaw)
+    #     print("Current pitch= ", pitch)
+
+    # val = cam.takePhoto()
+    # print("Taking photo... : ", val)
+
+    val = cam.toggleRecording()
+    print(" Recording ON? ", cam._recording_on)
