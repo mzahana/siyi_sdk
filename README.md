@@ -21,7 +21,7 @@ Python implementation of SIYI SDK for communication with ZR10 and A8 Mini camera
 * Done. 
 
 # Usage
-* You can go back to the `siyi_sdk/tests` directory and run the `test_*.py` scripts to learn how to use the sdk implementation
+* You can go to the `siyi_sdk/tests` directory and run the `test_*.py` scripts to learn how to use the sdk implementation
 
 * To import this module in your code, copy the `siyi_sdk.py` `siyi_message.py` `utility.py` `crc16_python.py` scripts in your code directory, and import as follows, and then follow the test examples
     ```python
