@@ -6,17 +6,16 @@ Email: mohamedashraf123@gmail.com
 Copyright 2022
 
 """
-
 import socket
 from siyi_message import COMMAND, SIYIMESSAGE
-from time import sleep
+from time import sleep, time
 import logging
 from utils import  toInt
 import threading
 
 
 class SIYISDK:
-    def __init__(self, server_ip="192.168.144.25", port=37260):
+    def __init__(self, server_ip="192.168.144.25", port=37260, debug=False):
         """
         
         Params
@@ -24,7 +23,7 @@ class SIYISDK:
         - server_ip [str] IP address of the camera
         - port: [int] UDP port of the camera
         """
-        self._debug= True # print debug messages
+        self._debug= debug # print debug messages
         if self._debug:
             d_level = logging.DEBUG
         else:
@@ -34,13 +33,10 @@ class SIYISDK:
         self._logger = logging.getLogger(self.__class__.__name__)
 
         # Message sent to the camera
-        self._out_msg = SIYIMESSAGE()
-        self._out_msg._debug = self._debug
+        self._out_msg = SIYIMESSAGE(debug=self._debug)
         
         # Message received from the camera
-        self._in_msg = SIYIMESSAGE()
-        self._in_msg._debug = self._debug
-        
+        self._in_msg = SIYIMESSAGE(debug=self._debug)        
 
         self._server_ip = server_ip
         self._port = port
@@ -80,11 +76,143 @@ class SIYISDK:
         # 0: Lock, 1: Follow, 2: FPV
         self._motion_mode = 1
 
+        # Connection thread
+        self._conn_loop_rate = 1 # seconds
+        self._conn_thread = threading.Thread(target=self.connectionLoop, args=(self._conn_loop_rate,))
+        self._stop = False # used to stop the above thread
+
+        # Gimbal info thread @ 1Hz
+        self._gimbal_info_loop_rate = 1
+        self._g_info_thread = threading.Thread(target=self.gimbalInfoLoop,
+                                                args=(self._gimbal_info_loop_rate,))
+
+        # Gimbal attitude thread @ 10Hz
+        self._gimbal_att_loop_rate = 0.1
+        self._g_att_thread = threading.Thread(target=self.gimbalAttLoop,
+                                                args=(self._gimbal_att_loop_rate,))
+
+    def resetVars(self):
+        """
+        Resets variables to their initial values. For example, to prepare for a fresh connection
+        """
+        self._connected = False
+
+        # Camera firmware version        
+        self._fw_ver = ''
+
+        # Hardware ID
+        self._hw_id=''
+
+        # Current hybrid Zoom level 1~30
+        self._zoom_level=1.0
+
+        # Current gimbal attitude
+        self._yaw_deg = 0.0
+        self._pitch_deg = 0.0
+        self._roll_deg = 0.0
+        self._yaw_speed = 0.0
+        self._pitch_speed = 0.0
+        self._roll_speed = 0.0
+
+        self._hdr_on = False
+
+        self._recording_on = False
+
+        # 1: Normal. 2: Upside down
+        self._mounting_dir = 1
+
+        # 0: Lock, 1: Follow, 2: FPV
+        self._motion_mode = 1
+
+        return True
+
+    def connect(self, maxWaitTime=3.0):
+        """
+        Makes sure there is conenction with the camera before doing anything.
+        It requests Frimware version for some time before it gives up
+
+        Params
+        --
+        maxWaitTime [int] Maximum time to wait before giving up on connection
+        """
+        self._conn_thread.start()
+        t0 = time()
+        while(True):
+            if self._connected:
+                self._g_info_thread.start()
+                self._g_att_thread.start()
+                return True
+            if (time() - t0)>maxWaitTime and not self._connected:
+                self.disconnect()
+                self._logger.error("Failed to connect to camera")
+                return False
+
+    def disconnect(self):
+        self._stop = True # stop the connection checking thread
+        self.resetVars()
+
+        
+    
     def checkConnection(self):
         """
-        checks if there is live connection to the camera
+        checks if there is live connection to the camera by requesting the Firmware version.
+        This function is to be run in a thread at a defined frequency
         """
         val = self.getFirmwareVersion()
+        if val is None:
+            self._connected = False
+        else:
+            self._connected = True
+
+    def connectionLoop(self, t):
+        """
+        This function is used in a thread to check connection status periodically
+
+        Params
+        --
+        t [float] message frequency, secnod(s)
+        """
+        while(True):
+            if self._stop:
+                self._connected=False
+                self.resetVars()
+                self._logger.warning("Connection checking loop is stopped. Check your connection!")
+                break
+            val = self.checkConnection()
+            sleep(t)
+
+    def isConnected(self):
+        return self._connected
+
+    def gimbalInfoLoop(self, t):
+        """
+        This function is used in a thread to get gimbal info periodically
+
+        Params
+        --
+        t [float] message frequency, secnod(s) 
+        """
+        while(True):
+            if not self._connected:
+                self._logger.warning("Stop gimbal info thread")
+                break
+            self.getGimbalInfo()
+            sleep(t)
+
+    def gimbalAttLoop(self, t):
+        """
+        This function is used in a thread to get gimbal attitude periodically
+
+        Params
+        --
+        t [float] message frequency, secnod(s) 
+        """
+        while(True):
+            if not self._connected:
+                self._logger.warning("Stop gimbal attitude thread")
+                break
+            self.getGimbalAttitude()
+            sleep(t)
 
     def sendMsg(self, msg):
         """
@@ -107,7 +235,7 @@ class SIYISDK:
         try:
             data,addr = self._socket.recvfrom(self._BUFF_SIZE)
         except Exception as e:
-            self._logger.error("%s. Did not receive message within %s second(s)", e, self._rcv_wait_t)
+            self._logger.warning("%s. Did not receive message within %s second(s)", e, self._rcv_wait_t)
         return data
 
     ###############################################################################
@@ -130,7 +258,7 @@ class SIYISDK:
                 self._logger.error("Could not send message request. Check communication")
                 return None
 
-            # Get feedback, timesout after 1 second
+            # Get feedback, timesout after self._rcv_wait_t second
             server_msg = self.rcvMsg()
             if server_msg is None:
                 self._logger.warning("Did not get feedback from camera")
@@ -173,7 +301,7 @@ class SIYISDK:
                 self._logger.error("Could not send message request. Check communication")
                 return None
 
-            # Get feedback, timesout after 1 second
+            # Get feedback, timesout after self._rcv_wait_t second(s)
             server_msg = self.rcvMsg()
             if server_msg is None:
                 self._logger.warning("Did not get feedback from camera")
@@ -223,7 +351,7 @@ class SIYISDK:
                 self._logger.error("Could not send message request. Check communication")
                 return None
 
-            # Get feedback, timesout after 1 second
+            # Get feedback, timesout after self._rcv_wait_t second(s)
             server_msg = self.rcvMsg()
             if server_msg is None:
                 self._logger.warning("Did not get feedback from camera")
@@ -274,7 +402,7 @@ class SIYISDK:
                 self._logger.error("Could not send message request. Check communication")
                 return None
 
-            # Get feedback, timesout after 1 second
+            # Get feedback, timesout after self._rcv_wait_t second(s)
             server_msg = self.rcvMsg()
             if server_msg is None:
                 self._logger.warning("Did not get feedback from camera")
@@ -328,7 +456,7 @@ class SIYISDK:
                 self._logger.error("Could not send message request. Check communication")
                 return None
 
-            # Get feedback, timesout after 1 second
+            # Get feedback, timesout after self._rcv_wait_t second(s)
             server_msg = self.rcvMsg()
             if server_msg is None:
                 self._logger.warning("Did not get feedback from camera")
@@ -379,7 +507,7 @@ class SIYISDK:
                 self._logger.error("Could not send data. Check communication")
                 return False
 
-            # Get feedback, timesout after 1 second
+            # Get feedback, timesout after self._rcv_wait_t second(s)
             server_msg = self.rcvMsg()
             self._logger.debug("server_msg hex string: %s", server_msg.hex())
 
@@ -429,7 +557,7 @@ class SIYISDK:
                 self._logger.error("Could not send data. Check communication")
                 return -1
 
-            # Get feedback, timesout after 1 second
+            # Get feedback, timesout after self._rcv_wait_t second(s)
             server_msg = self.rcvMsg()
             self._logger.debug("server_msg hex string: %s", server_msg.hex())
 
@@ -478,7 +606,7 @@ class SIYISDK:
                 self._logger.error("Could not send data. Check communication")
                 return False
 
-            # Get feedback, timesout after 1 second
+            # Get feedback, timesout after self._rcv_wait_t second(s)
             server_msg = self.rcvMsg()
             self._logger.debug("server_msg hex string: %s", server_msg.hex())
 
@@ -516,7 +644,7 @@ class SIYISDK:
                 self._logger.error("Could not send data. Check communication")
                 return False
 
-            # Get feedback, timesout after 1 second
+            # Get feedback, timesout after self._rcv_wait_t second(s)
             server_msg = self.rcvMsg()
 
             if server_msg is None:
@@ -561,7 +689,7 @@ class SIYISDK:
                 self._logger.error("Could not send data. Check communication")
                 return False
 
-            # Get feedback, timesout after 1 second
+            # Get feedback, timesout after self._rcv_wait_t second(s)
             server_msg = self.rcvMsg()
             self._logger.debug("server_msg hex string: %s", server_msg.hex())
 
@@ -789,12 +917,15 @@ class SIYISDK:
         
 
 if __name__ == "__main__":
-    cam = SIYISDK()
-    cam._debug=True
+    cam = SIYISDK(debug=True)
+
+    val = cam.connect()
+    print("Connection : ", val)
+
     # cam._rcv_wait_t = 1.0
 
-    fw = cam.getFirmwareVersion()
-    print("Firmware version: ", fw)
+    # fw = cam.getFirmwareVersion()
+    # print("Firmware version: ", fw)
     # hw = cam.getHardwareID()
     # print("Hardware ID: ", hw)
     # val = cam.getGimbalAttitude()
@@ -856,5 +987,5 @@ if __name__ == "__main__":
     # val = cam.takePhoto()
     # print("Taking photo... : ", val)
 
-    val = cam.toggleRecording()
-    print(" Recording ON? ", cam._recording_on)
+    # val = cam.toggleRecording()
+    # print(" Recording ON? ", cam._recording_on)
