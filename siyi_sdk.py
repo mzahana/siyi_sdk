@@ -917,10 +917,14 @@ class SIYISDK:
         
 
 if __name__ == "__main__":
-    cam = SIYISDK(debug=True)
+    cam = SIYISDK(debug=False)
 
-    val = cam.connect()
-    print("Connection : ", val)
+    # Max wait time before giving up on connecting, seconds
+    maxT = 3.0
+    good = cam.connect(maxWaitTime=maxT)
+    print("Connection : ", good)
+    if not good:
+        exit(1)
 
     # cam._rcv_wait_t = 1.0
 
