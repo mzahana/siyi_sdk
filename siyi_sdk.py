@@ -7,7 +7,7 @@ Copyright 2022
 
 """
 import socket
-from siyi_message import COMMAND, SIYIMESSAGE
+from siyi_message import COMMAND, SIYIMESSAGE, ATTITUDE
 from time import sleep, time
 import logging
 from utils import  toInt
@@ -59,12 +59,7 @@ class SIYISDK:
         self._zoom_level=1.0
 
         # Current gimbal attitude
-        self._yaw_deg = 0.0
-        self._pitch_deg = 0.0
-        self._roll_deg = 0.0
-        self._yaw_speed = 0.0
-        self._pitch_speed = 0.0
-        self._roll_speed = 0.0
+        self._att = ATTITUDE()
 
         self._hdr_on = False
 
@@ -363,7 +358,7 @@ class SIYISDK:
             val = self._in_msg.decodeMsg(server_msg.hex())
             if val is None:
                 return val
-            data_str, data_len, cmd_id = val[0], val[1], val[2]
+            data_str, data_len, cmd_id, seq = val[0], val[1], val[2], val[3]
             if cmd_id != COMMAND.ACQUIRE_GIMBAL_ATT:
                 self._logger.error("Command ID did not match")
                 return None
@@ -373,12 +368,16 @@ class SIYISDK:
                 self._logger.error("Decoded msg is empty")
                 return None
 
-            self._yaw_deg = yaw_deg = toInt(data_str[2:4]+data_str[0:2]) /10.
-            self._pitch_deg = pitch_deg = toInt(data_str[6:8]+data_str[4:6]) /10.
-            self._roll_deg = roll_deg = toInt(data_str[10:12]+data_str[8:10]) /10.
-            self._yaw_speed = yaw_velocity = toInt(data_str[14:16]+data_str[12:14]) /10.
-            self._pitch_speed = pitch_velocity = toInt(data_str[18:20]+data_str[16:18]) /10.
-            self._roll_speed = roll_velocity = toInt(data_str[22:24]+data_str[20:22]) /10.
+            if self._att.seq != seq:
+                self._att.stamp = time()
+                
+            self._att.seq = seq
+            self._att.yaw = yaw_deg = toInt(data_str[2:4]+data_str[0:2]) /10.
+            self._att.pitch = pitch_deg = toInt(data_str[6:8]+data_str[4:6]) /10.
+            self._att.roll = roll_deg = toInt(data_str[10:12]+data_str[8:10]) /10.
+            self._att.yaw_speed = yaw_velocity = toInt(data_str[14:16]+data_str[12:14]) /10.
+            self._att.pitch_speed = pitch_velocity = toInt(data_str[18:20]+data_str[16:18]) /10.
+            self._att.roll_speed = roll_velocity = toInt(data_str[22:24]+data_str[20:22]) /10.
             return yaw_deg, pitch_deg, roll_deg, yaw_velocity, pitch_velocity, roll_velocity
                 
         else:
