@@ -6,7 +6,6 @@ Email: mohamedashraf123@gmail.com
 Copyright 2022
 
 """
-from email.header import Header
 from crc16_python import crc16_str_swap
 import logging
 from utils import toHex
@@ -28,8 +27,8 @@ class SIYIMESSAGE:
     """
     Structure of SIYI camera messages
     """
-    def __init__(self) -> None:
-        self._debug= False # print debug messages
+    def __init__(self, debug=False) -> None:
+        self._debug= debug # print debug messages
         if self._debug:
             d_level = logging.DEBUG
         else:
