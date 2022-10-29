@@ -23,6 +23,16 @@ class COMMAND:
     PHOTO_VIDEO_HDR = '0c'
     ACQUIRE_GIMBAL_ATT = '0d'
 
+class ATTITUDE:
+    seq=    0
+    stamp=  0 # seconds
+    yaw=    0.0
+    pitch=  0.0
+    roll=   0.0
+    yaw_speed=  0.0 # deg/s
+    pitch_speed=0.0
+    roll_speed= 0.0
+
 class SIYIMESSAGE:
     """
     Structure of SIYI camera messages
@@ -142,6 +152,7 @@ class SIYIMESSAGE:
         - data [str] string of hexadecimal of data bytes.
         - data_len [int] Number of data bytes
         - cmd_id [str] command ID
+        - seq [int] message sequence
         """
         data = None
         if not isinstance(msg, str):
@@ -156,7 +167,7 @@ class SIYIMESSAGE:
         #            2 + 1  +    2   + 2 +   1  + 2
         MINIMUM_DATA_LENGTH=10*2
         if len(msg)<MINIMUM_DATA_LENGTH:
-            self._logger.error("Not enough data to encode. Number of bytes %s. Expecting %s bytes", len(msg)/2, MINIMUM_DATA_LENGTH)
+            self._logger.error("Not enough data to encode. Number of bytes %s. Expecting >= %s bytes", len(msg)/2, MINIMUM_DATA_LENGTH)
             return data
 
         # Check header (STX)
@@ -172,10 +183,16 @@ class SIYIMESSAGE:
             self._logger.error("CRC16 is not valid. Got %s. Expected %s. Message might be corrupted!", msg_crc, expected_crc)
             return data
         
+        # Sequence
+        low_b = msg[10:12] # low byte
+        high_b = msg[12:14] # high byte
+        seq_hex = high_b+low_b
+        seq = int('0x'+seq_hex, base=16)
+
         # Data length, bytes are reversed, according to SIYI SDK
-        high_b = msg[6:8] # high byte
-        low_b = msg[8:10] # low byte
-        data_len = low_b+high_b
+        low_b = msg[6:8] # low byte
+        high_b = msg[8:10] # high byte
+        data_len = high_b+low_b
         data_len = int('0x'+data_len, base=16)
         char_len = data_len*2 # number of characters. Each byte is represented by two characters in hex, e.g. '0A'= 2 chars
         
@@ -187,7 +204,7 @@ class SIYIMESSAGE:
         self._data_len = data_len
         self._cmd_id = cmd_id
 
-        return data, data_len, cmd_id
+        return data, data_len, cmd_id, seq
 
     def encodeMsg(self, data, cmd_id):
         """
