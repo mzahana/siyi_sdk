@@ -7,7 +7,7 @@ Copyright 2022
 
 """
 import socket
-from siyi_message import COMMAND, SIYIMESSAGE, ATTITUDE
+from siyi_message import *
 from time import sleep, time
 import logging
 from utils import  toInt
@@ -49,27 +49,18 @@ class SIYISDK:
 
         self._connected = False
 
-        # Camera firmware version        
-        self._fw_ver = ''
-
-        # Hardware ID
-        self._hw_id=''
-
-        # Current hybrid Zoom level 1~30
-        self._zoom_level=1.0
-
-        # Current gimbal attitude
-        self._att = ATTITUDE()
-
-        self._hdr_on = False
-
-        self._recording_on = False
-
-        # 1: Normal. 2: Upside down
-        self._mounting_dir = 1
-
-        # 0: Lock, 1: Follow, 2: FPV
-        self._motion_mode = 1
+        self._fw_msg = FirmwareMsg()
+        self._hw_msg = HardwaareIDMsg()
+        self._autoFocus_msg = AutoFocusMsg()
+        self._manualZoom_msg=ManualZoomMsg()
+        self._manualFocus_msg=ManualFocusMsg()
+        self._gimbalSpeed_msg=GimbalSpeedMsg()
+        self._center_msg=CenterMsg()
+        self._record_msg=RecordingMsg()
+        self._mountDir_msg=MountDirMsg()
+        self._motionMode_msg=MotionModeMsg()
+        self._funcFeedback_msg=FuncFeedbackInfoMsg()
+        self._att_msg=AttitdueMsg()
 
         # Connection thread
         self._conn_loop_rate = 1 # seconds
@@ -233,21 +224,70 @@ class SIYISDK:
             self._logger.warning("%s. Did not receive message within %s second(s)", e, self._rcv_wait_t)
         return data
 
+    def bufferCallback(self):
+        """
+        Receives messages and parses its content
+        """
+        buff,addr = self._socket.recvfrom(self._BUFF_SIZE)
+
+        buff_str = buff.hex()
+
+        # 10 bytes: STX+CTRL+Data_len+SEQ+CMD_ID+CRC16
+        #            2 + 1  +    2   + 2 +   1  + 2
+        MINIMUM_DATA_LENGTH=10*2
+
+        HEADER='5566'
+        # Go through the buffer
+        while(len(buff_str)>=MINIMUM_DATA_LENGTH):
+            if buff_str[0:4]!=HEADER:
+                # Remove the 1st element and continue 
+                tmp=buff_str[1:]
+                buff_str=tmp
+                continue
+
+            # Now we got minimum amount of data. Check if we have enough
+            # Data length, bytes are reversed, according to SIYI SDK
+            low_b = buff_str[6:8] # low byte
+            high_b = buff_str[8:10] # high byte
+            data_len = high_b+low_b
+            data_len = int('0x'+data_len, base=16)
+            char_len = data_len*2
+
+            # Check if there is enough data (including payload)
+            if(len(buff_str) < (MINIMUM_DATA_LENGTH+char_len)):
+                # No useful data
+                buff_str=''
+                break
+            
+            packet = buff_str[0:MINIMUM_DATA_LENGTH+char_len]
+            buff_str = buff_str[MINIMUM_DATA_LENGTH+char_len:]
+
+            # Finally decode the packet!
+            val = self._in_msg.decodeMsg(packet)
+            if val is None:
+                continue
+            
+            data, data_len, cmd_id, seq = val[0], val[1], val[2], val[3]
+
+            if cmd_id==COMMAND.ACQUIRE_FW_VER:
+                self.parseFWVersion(data)
     ###############################################################################
     #                                    Get  functions                           #
     ###############################################################################
-    def getFirmwareVersion(self):
+    def parseFWVersion(self, data):
         """
-        Returns Firmware version
+        Updates the self
+
+        Params
+        --
+        - data [str] data packet in hexadecimal
 
         Returns
         --
-        - [str] Currently returns firmware version as hexdecimal string.
-             Returns None on failure
+        - [bool] True: success. False: fail
         """
-
-        msg = self._out_msg.firmwareVerMsg()
-        if len(msg)>0:
+        self._fw_ver
+        if len(data)>0:
             good = self.sendMsg(msg)
             if not good:
                 self._logger.error("Could not send message request. Check communication")

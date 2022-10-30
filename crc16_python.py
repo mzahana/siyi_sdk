@@ -56,15 +56,23 @@ def crc16_str_swap(val: str):
     b = bytes.fromhex(val)
     crc_int = crc16(b)
     crc_str = format(crc_int, 'x')
-    if len(crc_str)==3 or len(crc_str)==1:
-        # Make it even number of characters
+
+    # Make sure crc is 4 chatracters (2 for each byte) with swaped bytes
+    if len(crc_str)==3:
         crc_str = "0"+crc_str
-    # Reverse bytes, according to SIYI SDK
-    c1 = crc_str[2:] # low byte
-    c2 = crc_str[0:2] # high byte
+        # Reverse bytes, according to SIYI SDK
+        low_byte = crc_str[2:]
+        high_byte = crc_str[0:2]
+        # swap bytes
+        crc_str = low_byte+high_byte
+    elif len(crc_str)==2:
+        crc_str=crc_str+'00'
+    elif len(crc_str)==1:
+        crc_str='0'+crc_str+'00'
+    else:
+        crc_str='ffff'
     
-    # low+high
-    return(c1+c2)
+    return(crc_str)
 
 def crc16_test():
     LOG_FORMAT='%(asctime)s [CRC16PYTHON::%(funcName)s] [%(levelname)s]:\t%(message)s'
