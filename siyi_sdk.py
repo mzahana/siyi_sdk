@@ -265,7 +265,7 @@ class SIYISDK:
                 return None
             data_str, data_len, cmd_id = val[0], val[1], val[2]
             if cmd_id != COMMAND.ACQUIRE_FW_VER:
-                self._logger.error("Command ID did not match")
+                self._logger.error("Command ID did not match. Received CMD ID %s. Ecpected CDM ID %s", cmd_id, COMMAND.ACQUIRE_FW_VER)
                 return None
             
             self._logger.debug("Data hex string: %s", data_str)
@@ -308,7 +308,7 @@ class SIYISDK:
                 return None
             data_str, data_len, cmd_id = val[0], val[1], val[2]
             if cmd_id != COMMAND.ACQUIRE_HW_ID:
-                self._logger.error("Command ID did not match")
+                self._logger.error("Command ID did not match. Received CMD ID %s. Ecpected CDM ID %s", cmd_id, COMMAND.ACQUIRE_HW_ID)
                 return None
             
             self._logger.debug("Data hex string: %s", data_str)
@@ -360,7 +360,7 @@ class SIYISDK:
                 return val
             data_str, data_len, cmd_id, seq = val[0], val[1], val[2], val[3]
             if cmd_id != COMMAND.ACQUIRE_GIMBAL_ATT:
-                self._logger.error("Command ID did not match")
+                self._logger.error("Command ID did not match. Received CMD ID %s. Ecpected CDM ID %s", cmd_id, COMMAND.ACQUIRE_GIMBAL_ATT)
                 return None
             
             self._logger.debug("Data hex string: %s", data_str)
@@ -416,7 +416,7 @@ class SIYISDK:
             data_str, data_len, cmd_id = val[0], val[1], val[2]
             self._logger.debug("Data Length: %s", data_len)
             if cmd_id != COMMAND.ACQUIRE_GIMBAL_INFO:
-                self._logger.error("Command ID did not match")
+                self._logger.error("Command ID did not match. Received CMD ID %s. Ecpected CDM ID %s", cmd_id, COMMAND.ACQUIRE_GIMBAL_INFO)
                 return None
             
             self._logger.debug("Data hex string: %s", data_str)
@@ -470,7 +470,7 @@ class SIYISDK:
             data_str, data_len, cmd_id = val[0], val[1], val[2]
             self._logger.debug("Data Length: %s", data_len)
             if cmd_id != COMMAND.FUNC_FEEDBACK_INFO:
-                self._logger.error("Command ID did not match")
+                self._logger.error("Command ID did not match. Received CMD ID %s. Ecpected CDM ID %s", cmd_id, COMMAND.FUNC_FEEDBACK_INFO)
                 return None
             
             self._logger.debug("Data hex string: %s", data_str)

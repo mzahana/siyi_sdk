@@ -6,6 +6,7 @@ Email: mohamedashraf123@gmail.com
 Copyright 2022
 
 """
+from os import stat
 from crc16_python import crc16_str_swap
 import logging
 from utils import toHex
@@ -155,50 +156,76 @@ class SIYIMESSAGE:
         - seq [int] message sequence
         """
         data = None
+        
         if not isinstance(msg, str):
             self._logger.error("Input message is not a string")
             return data
 
-        if len(msg)==0:
+        if len(msg)<4: # At least the number of headr bytes*2
             self._logger.error("No data to decode")
             return data
+
+        # Loop through bytes to find the HEADER bytes
+        start_idx = 0
+        found_header=False
+        L = range(len(msg)-4)
+        for i in L:
+            if msg[i:i+4]==self.HEADER:
+                start_idx = i
+                found_header=True
+                break
+        
+        if not found_header:
+            self._logger.debug("Didn't find message header in msg %s", msg)
+            return data
+
+        # Now we found the header
+        # remove the previous data
+        parsed_msg = msg[start_idx:]
 
         # 10 bytes: STX+CTRL+Data_len+SEQ+CMD_ID+CRC16
         #            2 + 1  +    2   + 2 +   1  + 2
         MINIMUM_DATA_LENGTH=10*2
-        if len(msg)<MINIMUM_DATA_LENGTH:
-            self._logger.error("Not enough data to encode. Number of bytes %s. Expecting >= %s bytes", len(msg)/2, MINIMUM_DATA_LENGTH)
+        if len(parsed_msg)<MINIMUM_DATA_LENGTH:
+            self._logger.error("Not enough data to encode. Number of bytes %s. Expecting >= %s bytes", len(parsed_msg)/2, MINIMUM_DATA_LENGTH)
             return data
 
-        # Check header (STX)
-        if msg[0:4]!=self.HEADER:
-            self._logger.error("Msg heaeder 5566 is not matched. Got %s", msg[0:4])
+        # Now we got minimum amount of data. Check if we have enough
+        # Data length, bytes are reversed, according to SIYI SDK
+        low_b = parsed_msg[6:8] # low byte
+        high_b = parsed_msg[8:10] # high byte
+        data_len = high_b+low_b
+        data_len = int('0x'+data_len, base=16)
+        char_len = data_len*2 # number of characters. Each byte is represented by two characters in hex, e.g. '0A'= 2 chars
+
+        # number of characters with data
+        packet_L = MINIMUM_DATA_LENGTH+char_len
+
+        if len(parsed_msg)<packet_L:
+            self._logger.debug("Parsed message does not have enough data. Expected %s, Got %s", packet_L,len(parsed_msg))
             return data
+
+        # Now we got enough data. Check CRC16
 
         # check crc16, if msg is OK!
-        msg_crc=msg[-4:] # last 4 characters
-        payload=msg[:-4]
+        msg_crc=parsed_msg[-4:] # last 4 characters
+        payload=parsed_msg[:-4]
         expected_crc=crc16_str_swap(payload)
         if expected_crc!=msg_crc:
             self._logger.error("CRC16 is not valid. Got %s. Expected %s. Message might be corrupted!", msg_crc, expected_crc)
             return data
         
         # Sequence
-        low_b = msg[10:12] # low byte
-        high_b = msg[12:14] # high byte
+        low_b = parsed_msg[10:12] # low byte
+        high_b = parsed_msg[12:14] # high byte
         seq_hex = high_b+low_b
         seq = int('0x'+seq_hex, base=16)
-
-        # Data length, bytes are reversed, according to SIYI SDK
-        low_b = msg[6:8] # low byte
-        high_b = msg[8:10] # high byte
-        data_len = high_b+low_b
-        data_len = int('0x'+data_len, base=16)
-        char_len = data_len*2 # number of characters. Each byte is represented by two characters in hex, e.g. '0A'= 2 chars
         
-        cmd_id = msg[14:16]
+        # CMD ID
+        cmd_id = parsed_msg[14:16]
         
-        data = msg[16:16+char_len]
+        # DATA
+        data = parsed_msg[16:16+char_len]
         
         self._data = data
         self._data_len = data_len
