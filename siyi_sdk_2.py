@@ -45,12 +45,12 @@ class SIYISDK:
 
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._rcv_wait_t = 0.5 # Receiving wait time
-        self._socket.settimeout(self._rcv_wait_t)
+        # self._socket.settimeout(self._rcv_wait_t)
 
         self._connected = False
 
         self._fw_msg = FirmwareMsg()
-        self._hw_msg = HardwaareIDMsg()
+        self._hw_msg = HardwareIDMsg()
         self._autoFocus_msg = AutoFocusMsg()
         self._manualZoom_msg=ManualZoomMsg()
         self._manualFocus_msg=ManualFocusMsg()
@@ -63,6 +63,7 @@ class SIYISDK:
         self._att_msg=AttitdueMsg()
 
         # Connection thread
+        self._last_fw_seq=0 # used to check on connection liveness
         self._conn_loop_rate = 1 # seconds
         self._conn_thread = threading.Thread(target=self.connectionLoop, args=(self._conn_loop_rate,))
         self._stop = False # used to stop the above thread
@@ -83,7 +84,7 @@ class SIYISDK:
         """
         self._connected = False
         self._fw_msg = FirmwareMsg()
-        self._hw_msg = HardwaareIDMsg()
+        self._hw_msg = HardwareIDMsg()
         self._autoFocus_msg = AutoFocusMsg()
         self._manualZoom_msg=ManualZoomMsg()
         self._manualFocus_msg=ManualFocusMsg()
@@ -123,18 +124,18 @@ class SIYISDK:
         self._stop = True # stop the connection checking thread
         self.resetVars()
 
-        
-    
     def checkConnection(self):
         """
         checks if there is live connection to the camera by requesting the Firmware version.
         This function is to be run in a thread at a defined frequency
         """
-        val = self.getFirmwareVersion()
-        if val is None:
-            self._connected = False
-        else:
+        self.requestFirmwareVersion()
+        sleep(0.1)
+        if self._fw_msg.seq!=self._last_fw_seq and len(self._fw_msg.gimbal_firmware_ver)>0:
             self._connected = True
+            self._last_fw_seq=self._fw_msg.seq
+        else:
+            self._connected = False
 
     def connectionLoop(self, t):
         """
@@ -150,7 +151,7 @@ class SIYISDK:
                 self.resetVars()
                 self._logger.warning("Connection checking loop is stopped. Check your connection!")
                 break
-            val = self.checkConnection()
+            self.checkConnection()
             sleep(t)
 
     def isConnected(self):
@@ -166,9 +167,9 @@ class SIYISDK:
         """
         while(True):
             if not self._connected:
-                self._logger.warning("Stop gimbal info thread")
+                self._logger.warning("Gimbal info thread is sopped. Check connection")
                 break
-            self.getGimbalInfo()
+            self.requestGimbalInfo()
             sleep(t)
 
     def gimbalAttLoop(self, t):
@@ -181,9 +182,9 @@ class SIYISDK:
         """
         while(True):
             if not self._connected:
-                self._logger.warning("Stop gimbal attitude thread")
+                self._logger.warning("Gimbal attitude thread is sopped. Check connection")
                 break
-            self.getGimbalAttitude()
+            self.requestGimbalAttitude()
             sleep(t)
 
     def sendMsg(self, msg):
@@ -256,8 +257,33 @@ class SIYISDK:
             data, data_len, cmd_id, seq = val[0], val[1], val[2], val[3]
 
             if cmd_id==COMMAND.ACQUIRE_FW_VER:
-                self.parseFWVersion(data)
+                self.parseFWVersion(data, seq)
+            elif cmd_id==COMMAND.ACQUIRE_HW_ID:
+                self.parseHardwareIDMsg(data, seq)
+            elif cmd_id==COMMAND.ACQUIRE_GIMBAL_INFO:
+                self.parseGimbalInfoMsg(data, seq)
+            elif cmd_id==COMMAND.ACQUIRE_GIMBAL_ATT:
+                self.parseAttitudeMsg(data, seq)
+            elif cmd_id==COMMAND.FUNC_FEEDBACK_INFO:
+                self.parseFunctionFeedbackMsg(data, seq)
+            elif cmd_id==COMMAND.GIMBAL_ROT:
+                self.parseGimbalSpeedMsg(data, seq)
+            elif cmd_id==COMMAND.AUTO_FOCUS:
+                self.parseAutoFocusMsg(data, seq)
+            elif cmd_id==COMMAND.MANUAL_FOCUS:
+                self.parseManualFocusMsg(data, seq)
+            elif cmd_id==COMMAND.MANUAL_ZOOM:
+                self.parseZoomMsg(data, seq)
+            elif cmd_id==COMMAND.CENTER:
+                self.parseGimbalCenterMsg(data, seq)
+            else:
+                self._logger.warning("CMD ID is not recognized")
+        
+        return
     
+    ##################################################
+    #               Request functions                #
+    ##################################################    
     def requestFirmwareVersion(self):
         """
         Sends request for firmware version
@@ -427,7 +453,7 @@ class SIYISDK:
             return False
         return True
 
-    def requestGimbalSpeed(self, yaw_speed, pitch_speed):
+    def requestGimbalSpeed(self, yaw_speed:int, pitch_speed:int):
         """
         Sends request for gimbal centering
 
@@ -513,7 +539,7 @@ class SIYISDK:
     ####################################################
     #                Parsing functions                 #
     ####################################################
-    def parseFirmwareMsg(self, msg, seq):
+    def parseFirmwareMsg(self, msg:str, seq:int):
         try:
             self._fw_msg.gimbal_firmware_ver= msg[8:16]
             self._fw_msg.seq=seq
@@ -525,7 +551,7 @@ class SIYISDK:
             self._logger.error("Error %s", e)
             return False
 
-    def parseHardwareIDMsg(self, msg, seq):
+    def parseHardwareIDMsg(self, msg:str, seq:int):
         try:
             self._hw_msg.seq=seq
             self._hw_msg.id = msg
@@ -536,7 +562,7 @@ class SIYISDK:
             self._logger.error("Error %s", e)
             return False
 
-    def parseAttitudeMsg(self, msg, seq):
+    def parseAttitudeMsg(self, msg:str, seq:int):
         
         try:
             self._att_msg.seq=seq
@@ -556,7 +582,7 @@ class SIYISDK:
             self._logger.error("Error %s", e)
             return False
 
-    def parseGimbalInfoMsg(self, msg, seq):
+    def parseGimbalInfoMsg(self, msg:str, seq:int):
         
         try:
             self._record_msg.seq=seq
@@ -573,7 +599,7 @@ class SIYISDK:
             self._logger.error("Error %s", e)
             return False
 
-    def parseAutoFocusMsg(self, msg, seq):
+    def parseAutoFocusMsg(self, msg:str, seq:int):
         
         try:
             self._autoFocus_msg.seq=seq
@@ -587,7 +613,7 @@ class SIYISDK:
             self._logger.error("Error %s", e)
             return False
 
-    def parseZoomMsg(self, msg, seq):
+    def parseZoomMsg(self, msg:str, seq:int):
         
         try:
             self._manualZoom_msg.seq=seq
@@ -601,7 +627,7 @@ class SIYISDK:
             self._logger.error("Error %s", e)
             return False
 
-    def parseManualFocusMsg(self, msg, seq):
+    def parseManualFocusMsg(self, msg:str, seq:int):
         
         try:
             self._manualFocus_msg.seq=seq
@@ -615,7 +641,7 @@ class SIYISDK:
             self._logger.error("Error %s", e)
             return False
 
-    def parseGimbalSpeedMsg(self, msg, seq):
+    def parseGimbalSpeedMsg(self, msg:str, seq:int):
         
         try:
             self._gimbalSpeed_msg.seq=seq
@@ -629,7 +655,7 @@ class SIYISDK:
             self._logger.error("Error %s", e)
             return False
 
-    def parseGimbalCenterMsg(self, msg, seq):
+    def parseGimbalCenterMsg(self, msg:str, seq:int):
         
         try:
             self._center_msg.seq=seq
@@ -643,7 +669,7 @@ class SIYISDK:
             self._logger.error("Error %s", e)
             return False
 
-    def parseFunctionFeedbackMsg(self, msg, seq):
+    def parseFunctionFeedbackMsg(self, msg:str, seq:int):
         
         try:
             self._funcFeedback_msg.seq=seq
@@ -656,3 +682,26 @@ class SIYISDK:
         except Exception as e:
             self._logger.error("Error %s", e)
             return False
+
+    ##################################################
+    #                   Get functions                #
+    ##################################################
+    def getAttitude(self):
+        return(self._att_msg.yaw, self._att_msg.pitch, self._att_msg.roll)
+
+    def getAttitudeSpeed(self):
+        return(self._att_msg.yaw_speed, self._att_msg.pitch_speed, self._att_msg.roll_speed)
+
+    def getFirmwareVersion(self):
+        return(self._fw_msg.gimbal_firmware_ver)
+
+    def getHardwareID(self):
+        return(self._hw_msg.id)
+
+def test():
+    cam=SIYISDK(debug=True)
+
+    if not cam.connect():
+        exit(1)
+if __name__=="__main__":
+    test()

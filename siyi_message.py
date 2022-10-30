@@ -17,7 +17,7 @@ class FirmwareMsg:
     gimbal_firmware_ver=''
     zoom_firmware_ver=''
 
-class HardwaareIDMsg:
+class HardwareIDMsg:
     seq=0
     id=''
 
@@ -27,7 +27,7 @@ class AutoFocusMsg:
 
 class ManualZoomMsg:
     seq=0
-    level=0
+    level=-1
 
 class ManualFocusMsg:
     seq=0
@@ -43,7 +43,7 @@ class CenterMsg:
 
 class RecordingMsg:
     seq=0
-    state=0
+    state=-1
     OFF=0
     ON=1
     TF_EMPTY=2
@@ -51,13 +51,13 @@ class RecordingMsg:
 
 class MountDirMsg:
     seq=0
-    dir=0
+    dir=-1
     NORMAL=0
     UPSIDE=1
 
 class MotionModeMsg:
     seq=0
-    mode=0
+    mode=-1
     LOCK=0
     FOLLOW=1
     FPV=2
