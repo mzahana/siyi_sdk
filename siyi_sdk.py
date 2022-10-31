@@ -44,13 +44,13 @@ class SIYISDK:
         self._BUFF_SIZE=1024
 
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._rcv_wait_t = 0.5 # Receiving wait time
-        self._socket.settimeout(self._rcv_wait_t) # 1 second timeout for recvfrom()
+        self._rcv_wait_t = 2 # Receiving wait time
+        self._socket.settimeout(self._rcv_wait_t)
 
         self._connected = False
 
         self._fw_msg = FirmwareMsg()
-        self._hw_msg = HardwaareIDMsg()
+        self._hw_msg = HardwareIDMsg()
         self._autoFocus_msg = AutoFocusMsg()
         self._manualZoom_msg=ManualZoomMsg()
         self._manualFocus_msg=ManualFocusMsg()
@@ -61,11 +61,17 @@ class SIYISDK:
         self._motionMode_msg=MotionModeMsg()
         self._funcFeedback_msg=FuncFeedbackInfoMsg()
         self._att_msg=AttitdueMsg()
+        self._last_att_seq=-1
+
+        # Stop threads
+        self._stop = False # used to stop the above thread
+        
+        self._recv_thread = threading.Thread(target=self.recvLoop)
 
         # Connection thread
+        self._last_fw_seq=0 # used to check on connection liveness
         self._conn_loop_rate = 1 # seconds
         self._conn_thread = threading.Thread(target=self.connectionLoop, args=(self._conn_loop_rate,))
-        self._stop = False # used to stop the above thread
 
         # Gimbal info thread @ 1Hz
         self._gimbal_info_loop_rate = 1
@@ -82,33 +88,19 @@ class SIYISDK:
         Resets variables to their initial values. For example, to prepare for a fresh connection
         """
         self._connected = False
+        self._fw_msg = FirmwareMsg()
+        self._hw_msg = HardwareIDMsg()
+        self._autoFocus_msg = AutoFocusMsg()
+        self._manualZoom_msg=ManualZoomMsg()
+        self._manualFocus_msg=ManualFocusMsg()
+        self._gimbalSpeed_msg=GimbalSpeedMsg()
+        self._center_msg=CenterMsg()
+        self._record_msg=RecordingMsg()
+        self._mountDir_msg=MountDirMsg()
+        self._motionMode_msg=MotionModeMsg()
+        self._funcFeedback_msg=FuncFeedbackInfoMsg()
+        self._att_msg=AttitdueMsg()
 
-        # Camera firmware version        
-        self._fw_ver = ''
-
-        # Hardware ID
-        self._hw_id=''
-
-        # Current hybrid Zoom level 1~30
-        self._zoom_level=1.0
-
-        # Current gimbal attitude
-        self._yaw_deg = 0.0
-        self._pitch_deg = 0.0
-        self._roll_deg = 0.0
-        self._yaw_speed = 0.0
-        self._pitch_speed = 0.0
-        self._roll_speed = 0.0
-
-        self._hdr_on = False
-
-        self._recording_on = False
-
-        # 1: Normal. 2: Upside down
-        self._mounting_dir = 1
-
-        # 0: Lock, 1: Follow, 2: FPV
-        self._motion_mode = 1
 
         return True
 
@@ -121,6 +113,7 @@ class SIYISDK:
         --
         maxWaitTime [int] Maximum time to wait before giving up on connection
         """
+        self._recv_thread.start()
         self._conn_thread.start()
         t0 = time()
         while(True):
@@ -134,21 +127,22 @@ class SIYISDK:
                 return False
 
     def disconnect(self):
+        self._logger.info("Stopping all threads")
         self._stop = True # stop the connection checking thread
         self.resetVars()
 
-        
-    
     def checkConnection(self):
         """
         checks if there is live connection to the camera by requesting the Firmware version.
         This function is to be run in a thread at a defined frequency
         """
-        val = self.getFirmwareVersion()
-        if val is None:
-            self._connected = False
-        else:
+        self.requestFirmwareVersion()
+        sleep(0.1)
+        if self._fw_msg.seq!=self._last_fw_seq and len(self._fw_msg.gimbal_firmware_ver)>0:
             self._connected = True
+            self._last_fw_seq=self._fw_msg.seq
+        else:
+            self._connected = False
 
     def connectionLoop(self, t):
         """
@@ -164,7 +158,7 @@ class SIYISDK:
                 self.resetVars()
                 self._logger.warning("Connection checking loop is stopped. Check your connection!")
                 break
-            val = self.checkConnection()
+            self.checkConnection()
             sleep(t)
 
     def isConnected(self):
@@ -180,9 +174,9 @@ class SIYISDK:
         """
         while(True):
             if not self._connected:
-                self._logger.warning("Stop gimbal info thread")
+                self._logger.warning("Gimbal info thread is stopped. Check connection")
                 break
-            self.getGimbalInfo()
+            self.requestGimbalInfo()
             sleep(t)
 
     def gimbalAttLoop(self, t):
@@ -195,9 +189,9 @@ class SIYISDK:
         """
         while(True):
             if not self._connected:
-                self._logger.warning("Stop gimbal attitude thread")
+                self._logger.warning("Gimbal attitude thread is stopped. Check connection")
                 break
-            self.getGimbalAttitude()
+            self.requestGimbalAttitude()
             sleep(t)
 
     def sendMsg(self, msg):
@@ -224,6 +218,13 @@ class SIYISDK:
             self._logger.warning("%s. Did not receive message within %s second(s)", e, self._rcv_wait_t)
         return data
 
+    def recvLoop(self):
+        self._logger.debug("Started data receiving thread")
+        while( not self._stop):
+            self.bufferCallback()
+        self._logger.debug("Exiting data receiving thread")
+
+    
     def bufferCallback(self):
         """
         Receives messages and parses its content
@@ -231,6 +232,7 @@ class SIYISDK:
         buff,addr = self._socket.recvfrom(self._BUFF_SIZE)
 
         buff_str = buff.hex()
+        self._logger.debug("Buffer: %s", buff_str)
 
         # 10 bytes: STX+CTRL+Data_len+SEQ+CMD_ID+CRC16
         #            2 + 1  +    2   + 2 +   1  + 2
@@ -270,489 +272,464 @@ class SIYISDK:
             data, data_len, cmd_id, seq = val[0], val[1], val[2], val[3]
 
             if cmd_id==COMMAND.ACQUIRE_FW_VER:
-                self.parseFWVersion(data)
-    ###############################################################################
-    #                                    Get  functions                           #
-    ###############################################################################
-    def parseFWVersion(self, data):
+                self.parseFirmwareMsg(data, seq)
+            elif cmd_id==COMMAND.ACQUIRE_HW_ID:
+                self.parseHardwareIDMsg(data, seq)
+            elif cmd_id==COMMAND.ACQUIRE_GIMBAL_INFO:
+                self.parseGimbalInfoMsg(data, seq)
+            elif cmd_id==COMMAND.ACQUIRE_GIMBAL_ATT:
+                self.parseAttitudeMsg(data, seq)
+            elif cmd_id==COMMAND.FUNC_FEEDBACK_INFO:
+                self.parseFunctionFeedbackMsg(data, seq)
+            elif cmd_id==COMMAND.GIMBAL_ROT:
+                self.parseGimbalSpeedMsg(data, seq)
+            elif cmd_id==COMMAND.AUTO_FOCUS:
+                self.parseAutoFocusMsg(data, seq)
+            elif cmd_id==COMMAND.MANUAL_FOCUS:
+                self.parseManualFocusMsg(data, seq)
+            elif cmd_id==COMMAND.MANUAL_ZOOM:
+                self.parseZoomMsg(data, seq)
+            elif cmd_id==COMMAND.CENTER:
+                self.parseGimbalCenterMsg(data, seq)
+            else:
+                self._logger.warning("CMD ID is not recognized")
+        
+        return
+    
+    ##################################################
+    #               Request functions                #
+    ##################################################    
+    def requestFirmwareVersion(self):
         """
-        Updates the self
-
-        Params
-        --
-        - data [str] data packet in hexadecimal
+        Sends request for firmware version
 
         Returns
         --
-        - [bool] True: success. False: fail
+        [bool] True: success. False: fail
         """
-        self._fw_ver
-        if len(data)>0:
-            good = self.sendMsg(msg)
-            if not good:
-                self._logger.error("Could not send message request. Check communication")
-                return None
+        msg = self._out_msg.firmwareVerMsg()
+        if not self.sendMsg(msg):
+            return False
+        return True
 
-            # Get feedback, timesout after self._rcv_wait_t second
-            server_msg = self.rcvMsg()
-            if server_msg is None:
-                self._logger.warning("Did not get feedback from camera")
-                return None
-
-            # decode msg
-            val = self._in_msg.decodeMsg(server_msg.hex())
-            if val is None:
-                return None
-            data_str, data_len, cmd_id = val[0], val[1], val[2]
-            if cmd_id != COMMAND.ACQUIRE_FW_VER:
-                self._logger.error("Command ID did not match. Received CMD ID %s. Ecpected CDM ID %s", cmd_id, COMMAND.ACQUIRE_FW_VER)
-                return None
-            
-            self._logger.debug("Data hex string: %s", data_str)
-            if len(data_str)==0:
-                self._logger.error("Decoded msg is empty")
-                return None
-
-            self._fw_ver = data_str[8:16]
-            self._logger.debug("Firmware version: %s", self._fw_ver)
-            return self._fw_ver
-                
-        else:
-            self._logger.error("Could not construct msg")
-            return None
-
-    def getHardwareID(self):
+    def requestHardwareID(self):
         """
-        Returns Hardware ID
+        Sends request for Hardware ID
 
         Returns
         --
-        - [string] Hardwre ID as string of hexadecimal. Returns None on failure
+        [bool] True: success. False: fail
         """
         msg = self._out_msg.hwIdMsg()
-        if len(msg)>0:
-            good = self.sendMsg(msg)
-            if not good:
-                self._logger.error("Could not send message request. Check communication")
-                return None
+        if not self.sendMsg(msg):
+            return False
+        return True
 
-            # Get feedback, timesout after self._rcv_wait_t second(s)
-            server_msg = self.rcvMsg()
-            if server_msg is None:
-                self._logger.warning("Did not get feedback from camera")
-                return None
-
-            # decode msg
-            val = self._in_msg.decodeMsg(server_msg.hex())
-            if val is None:
-                return None
-            data_str, data_len, cmd_id = val[0], val[1], val[2]
-            if cmd_id != COMMAND.ACQUIRE_HW_ID:
-                self._logger.error("Command ID did not match. Received CMD ID %s. Ecpected CDM ID %s", cmd_id, COMMAND.ACQUIRE_HW_ID)
-                return None
-            
-            self._logger.debug("Data hex string: %s", data_str)
-            if len(data_str)==0:
-                self._logger.error("Decoded msg is empty")
-                return None
-
-            self._hw_id = data_str
-            self._logger.debug("Hardware ID: %s", self._hw_id)
-            return self._hw_id
-                
-        else:
-            self._logger.error("Could not construct msg")
-            return None
-
-    def getGimbalAttitude(self):
+    def requestGimbalAttitude(self):
         """
-        Sends msg to request gimbal attitude, and returns attitude in degrees, and attitude speed in deg/s.
-        Values are accurate to one decimal place.
+        Sends request for gimbal attitude
 
         Returns
         --
-        None on failure
-        yaw_deg: [float] yaw in degrees
-        pitch_deg: [float] pitch in degrees
-        roll_deg: [float] roll in degrees
-        yaw_velocity: [float] yaw speed in degrees/second
-        pitch_velocity: [float] pitch speed in degrees/second
-        roll_velocity: [float] roll speed in degrees/second
+        [bool] True: success. False: fail
         """
         msg = self._out_msg.gimbalAttMsg()
-        if len(msg)>0:
-            good = self.sendMsg(msg)
-            if not good:
-                self._logger.error("Could not send message request. Check communication")
-                return None
+        if not self.sendMsg(msg):
+            return False
+        return True
 
-            # Get feedback, timesout after self._rcv_wait_t second(s)
-            server_msg = self.rcvMsg()
-            if server_msg is None:
-                self._logger.warning("Did not get feedback from camera")
-                return None
-
-            self._logger.debug("Server message: %s", server_msg.hex())
-
-            # decode msg
-            val = self._in_msg.decodeMsg(server_msg.hex())
-            if val is None:
-                return val
-            data_str, data_len, cmd_id, seq = val[0], val[1], val[2], val[3]
-            if cmd_id != COMMAND.ACQUIRE_GIMBAL_ATT:
-                self._logger.error("Command ID did not match. Received CMD ID %s. Ecpected CDM ID %s", cmd_id, COMMAND.ACQUIRE_GIMBAL_ATT)
-                return None
-            
-            self._logger.debug("Data hex string: %s", data_str)
-            if len(data_str)==0:
-                self._logger.error("Decoded msg is empty")
-                return None
-
-            if self._att.seq != seq:
-                self._att.stamp = time()
-                
-            self._att.seq = seq
-            self._att.yaw = yaw_deg = toInt(data_str[2:4]+data_str[0:2]) /10.
-            self._att.pitch = pitch_deg = toInt(data_str[6:8]+data_str[4:6]) /10.
-            self._att.roll = roll_deg = toInt(data_str[10:12]+data_str[8:10]) /10.
-            self._att.yaw_speed = yaw_velocity = toInt(data_str[14:16]+data_str[12:14]) /10.
-            self._att.pitch_speed = pitch_velocity = toInt(data_str[18:20]+data_str[16:18]) /10.
-            self._att.roll_speed = roll_velocity = toInt(data_str[22:24]+data_str[20:22]) /10.
-            return yaw_deg, pitch_deg, roll_deg, yaw_velocity, pitch_velocity, roll_velocity
-                
-        else:
-            self._logger.error("Could not construct msg")
-            return None
-
-    def getGimbalInfo(self):
+    def requestGimbalInfo(self):
         """
-        Sends msg to request gimbal configuration information
+        Sends request for gimbal information
 
         Returns
         --
-        - None on failure
-        - record_state: [int] Recording status 0:OFF, 1: ON, 2: TF card slot is empty, 3:(Recording) Data loss in TF card recorded video, please check TF card
-        - mounting_dir: [int] Mounting direction 1: Normal, 2: Upside down
+        [bool] True: success. False: fail
         """
         msg = self._out_msg.gimbalInfoMsg()
-        if len(msg)>0:
-            good = self.sendMsg(msg)
-            if not good:
-                self._logger.error("Could not send message request. Check communication")
-                return None
+        if not self.sendMsg(msg):
+            return False
+        return True
 
-            # Get feedback, timesout after self._rcv_wait_t second(s)
-            server_msg = self.rcvMsg()
-            if server_msg is None:
-                self._logger.warning("Did not get feedback from camera")
-                return None
-
-            self._logger.debug("Server message: %s", server_msg.hex())
-
-            # decode msg
-            val = self._in_msg.decodeMsg(server_msg.hex())
-            if val is None:
-                return None
-            data_str, data_len, cmd_id = val[0], val[1], val[2]
-            self._logger.debug("Data Length: %s", data_len)
-            if cmd_id != COMMAND.ACQUIRE_GIMBAL_INFO:
-                self._logger.error("Command ID did not match. Received CMD ID %s. Ecpected CDM ID %s", cmd_id, COMMAND.ACQUIRE_GIMBAL_INFO)
-                return None
-            
-            self._logger.debug("Data hex string: %s", data_str)
-            if len(data_str)==0:
-                self._logger.error("Decoded msg is empty")
-                return None
-
-            # hdr_state = int(hex_str[2:4], base=16)
-            record_state = int(data_str[-4:-2], base=16)
-            self._recording_on = bool(record_state)
-            # motion_mode = int(hex_str[8:10], base=16)
-            mount_dir = int(data_str[-2:], base=16)
-            self._mounting_dir = mount_dir
-            return record_state, mount_dir
-                
-        else:
-            self._logger.error("Could not construct msg")
-            return None
-
-    def getFuncFeedback(self):
+    def requestFunctionFeedback(self):
         """
-        Sends msg to request Function Feedback Information
+        Sends request for function feedback msg
 
         Returns
         --
-        - None on failure
-        - ack_data: [int]
-                    0: success, 1: Fail to take a photo (Please check if TF card is inserted)
-                    2: HDR ON, 3: HDR OFF
-                    4: Fail to record a video (Please check if TF card is inserted)
+        [bool] True: success. False: fail
         """
         msg = self._out_msg.funcFeedbackMsg()
-        if len(msg)>0:
-            good = self.sendMsg(msg)
-            if not good:
-                self._logger.error("Could not send message request. Check communication")
-                return None
+        if not self.sendMsg(msg):
+            return False
+        return True
 
-            # Get feedback, timesout after self._rcv_wait_t second(s)
-            server_msg = self.rcvMsg()
-            if server_msg is None:
-                self._logger.warning("Did not get feedback from camera")
-                return None
-
-            self._logger.debug("Server message: %s", server_msg.hex())
-
-            # decode msg
-            val = self._in_msg.decodeMsg(server_msg.hex())
-            if val is None:
-                return None
-            data_str, data_len, cmd_id = val[0], val[1], val[2]
-            self._logger.debug("Data Length: %s", data_len)
-            if cmd_id != COMMAND.FUNC_FEEDBACK_INFO:
-                self._logger.error("Command ID did not match. Received CMD ID %s. Ecpected CDM ID %s", cmd_id, COMMAND.FUNC_FEEDBACK_INFO)
-                return None
-            
-            self._logger.debug("Data hex string: %s", data_str)
-            if len(data_str)==0:
-                self._logger.error("Decoded msg is empty")
-                return None
-
-            ack_data = int(data_str, base=16)
-            return ack_data
-                
-        else:
-            self._logger.error("Could not construct msg")
-            return None
-
-    ###############################################################################
-    #                                    Set  functions                           #
-    ###############################################################################
-    def setAutoFocus(self):
+    def requestAutoFocus(self):
         """
-        Sends msg to request auto focus.
+        Sends request for auto focus
 
-        Reutrns
+        Returns
         --
-        True: Success
-        False: Fail
+        [bool] True: success. False: fail
         """
         msg = self._out_msg.autoFocusMsg()
-        self._logger.debug("autofocus hex string: %s", msg)
-        
-        if len(msg)>0:
-            good = self.sendMsg(msg)
-            if not good:
-                self._logger.error("Could not send data. Check communication")
-                return False
-
-            # Get feedback, timesout after self._rcv_wait_t second(s)
-            server_msg = self.rcvMsg()
-            self._logger.debug("server_msg hex string: %s", server_msg.hex())
-
-            if server_msg is None:
-                self._logger.warning("Did not get feedback from camera")
-                return False
-            
-            # Decode mesage            
-            val = self._in_msg.decodeMsg(server_msg.hex())
-            if val is None:
-                return False
-            data_str, data_len, cmd_id = val[0], val[1], val[2]
-            self._logger.debug("Data hex string: %s", data_str)
-
-            flag = int(data_str, base=16)
-            if flag==1:
-                return True
-            else:
-                return False
-                
-        else:
-            self._logger.error("Could not construct msg")
+        if not self.sendMsg(msg):
             return False
+        return True
 
-    def setZoom(self, flag):
+    def requestZoomIn(self):
         """
-        Sends zoom request
+        Sends request for zoom in
 
-        Params
-        --
-        flag: [int] 1: start zoom in, 0: stop zoom, -1: start zoom out
-        
         Returns
         --
-        zoom_level: [int] 0~30. -1 if it fails
+        [bool] True: success. False: fail
         """
-        if (flag == 1):
-            msg=self._out_msg.zoomInMsg()
-        elif (flag == -1):
-            msg=self._out_msg.zoomOutMsg()
-        else:
-            msg=self._out_msg.stopZoomMsg()
-
-        if len(msg)>0:
-            good = self.sendMsg(msg)
-            if not good:
-                self._logger.error("Could not send data. Check communication")
-                return -1
-
-            # Get feedback, timesout after self._rcv_wait_t second(s)
-            server_msg = self.rcvMsg()
-            self._logger.debug("server_msg hex string: %s", server_msg.hex())
-
-            if server_msg is None:
-                self._logger.warning("Did not get feedback from camera")
-                return -1
-            
-            # Decode mesage            
-            val = self._in_msg.decodeMsg(server_msg.hex())
-            if val is None:
-                return -1
-            data_str, data_len, cmd_id = val[0], val[1], val[2]
-            self._logger.debug("Data hex string: %s", data_str)
-
-            self._zoom_level = int(data_str[2:4]+data_str[0:2], base=16) /10.
-             
-            return self._zoom_level
-                
-        else:
-            self._logger.error("Could not construct msg")
-            self._zoom_level=-1
-            return self._zoom_level
-
-    def setFocus(self, flag):
-        """
-        Sends manual focus request
-
-        Params
-        --
-        flag: [int] 1: Long shot, 0: stop manual focus, -1: close shot
-        
-        Returns
-        --
-        True: Success
-        False: Fail
-        """
-        if flag==1:
-            msg = self._out_msg.longFocusMsg()
-        elif flag==-1:
-            msg = self._out_msg.closeFocusMsg()
-        else:
-            msg = self._out_msg.stopFocusMsg()
-        if len(msg)>0:
-            good = self.sendMsg(msg)
-            if not good:
-                self._logger.error("Could not send data. Check communication")
-                return False
-
-            # Get feedback, timesout after self._rcv_wait_t second(s)
-            server_msg = self.rcvMsg()
-            self._logger.debug("server_msg hex string: %s", server_msg.hex())
-
-            if server_msg is None:
-                self._logger.warning("Did not get feedback from camera")
-                return False
-            
-            # Decode mesage            
-            val = self._in_msg.decodeMsg(server_msg.hex())
-            if val is None:
-                return False
-            data_str, data_len, cmd_id = val[0], val[1], val[2]
-            self._logger.debug("Data hex string: %s", data_str)
-
-            ret = int(data_str, base=16)
-            
-            return bool(ret)
-                
-        else:
-            self._logger.error("Could not construct msg")
+        msg = self._out_msg.zoomInMsg()
+        if not self.sendMsg(msg):
             return False
+        return True
 
-    def centerGimbal(self):
+    def requestZoomOut(self):
         """
-        Sends msg to set gimbal at the center position
+        Sends request for zoom out
 
         Returns
         --
-        [bool] True if successful. False otherwise
+        [bool] True: success. False: fail
+        """
+        msg = self._out_msg.zoomOutMsg()
+        if not self.sendMsg(msg):
+            return False
+        return True
+
+    def requestZoomHold(self):
+        """
+        Sends request for stopping zoom
+
+        Returns
+        --
+        [bool] True: success. False: fail
+        """
+        msg = self._out_msg.stopZoomMsg()
+        if not self.sendMsg(msg):
+            return False
+        return True
+
+    def requestLongFocus(self):
+        """
+        Sends request for manual focus, long shot
+
+        Returns
+        --
+        [bool] True: success. False: fail
+        """
+        msg = self._out_msg.longFocusMsg()
+        if not self.sendMsg(msg):
+            return False
+        return True
+
+    def requestCloseFocus(self):
+        """
+        Sends request for manual focus, close shot
+
+        Returns
+        --
+        [bool] True: success. False: fail
+        """
+        msg = self._out_msg.closeFocusMsg()
+        if not self.sendMsg(msg):
+            return False
+        return True
+
+    def requestFocusHold(self):
+        """
+        Sends request for manual focus, stop
+
+        Returns
+        --
+        [bool] True: success. False: fail
+        """
+        msg = self._out_msg.stopFocusMsg()
+        if not self.sendMsg(msg):
+            return False
+        return True
+
+    def requestCenterGimbal(self):
+        """
+        Sends request for gimbal centering
+
+        Returns
+        --
+        [bool] True: success. False: fail
         """
         msg = self._out_msg.centerMsg()
-        if len(msg)>0:
-            good = self.sendMsg(msg)
-            if not good:
-                self._logger.error("Could not send data. Check communication")
-                return False
-
-            # Get feedback, timesout after self._rcv_wait_t second(s)
-            server_msg = self.rcvMsg()
-
-            if server_msg is None:
-                self._logger.warning("Did not get feedback from camera")
-                return False
-
-            self._logger.debug("server_msg hex string: %s", server_msg.hex())
-            
-            # Decode mesage            
-            val = self._in_msg.decodeMsg(server_msg.hex())
-            if val is None:
-                return False
-            data_str, data_len, cmd_id = val[0], val[1], val[2]
-            self._logger.debug("Data hex string: %s", data_str)
-
-            flag = int(data_str, base=16)
-            if flag==1:
-                return True
-            else:
-                return False
-        else:
-            self._logger.error("Could not construct msg")
+        if not self.sendMsg(msg):
             return False
+        return True
 
-    def setGimbalSpeed(self, yaw_speed, pitch_speed):
+    def requestGimbalSpeed(self, yaw_speed:int, pitch_speed:int):
         """
-        Sends msg to set gimbal yaw and pitch speeds
+        Sends request for gimbal centering
 
         Params
         --
-        yaw_speed: [int] -100~0~100. Percentage of max speed
-        pitch_speed: [int] same as  yaw_speed
-
+        yaw_speed [int] -100~0~100. away from zero -> fast, close to zero -> slow. Sign is for direction
+        pitch_speed [int] Same as yaw_speed
+        
         Returns
         --
-        [bool] True if successful. False otherwise
+        [bool] True: success. False: fail
         """
         msg = self._out_msg.gimbalSpeedMsg(yaw_speed, pitch_speed)
-        if len(msg)>0:
-            good = self.sendMsg(msg)
-            if not good:
-                self._logger.error("Could not send data. Check communication")
-                return False
+        if not self.sendMsg(msg):
+            return False
+        return True
 
-            # Get feedback, timesout after self._rcv_wait_t second(s)
-            server_msg = self.rcvMsg()
-            self._logger.debug("server_msg hex string: %s", server_msg.hex())
+    def requestPhoto(self):
+        """
+        Sends request for taking photo
+        
+        Returns
+        --
+        [bool] True: success. False: fail
+        """
+        msg = self._out_msg.takePhotoMsg()
+        if not self.sendMsg(msg):
+            return False
+        return True
 
-            if server_msg is None:
-                self._logger.warning("Did not get feedback from camera")
-                return False
+    def requestRecording(self):
+        """
+        Sends request for toglling video recording
+        
+        Returns
+        --
+        [bool] True: success. False: fail
+        """
+        msg = self._out_msg.recordMsg()
+        if not self.sendMsg(msg):
+            return False
+        return True
+
+    def requestFPVMode(self):
+        """
+        Sends request for setting FPV mode
+        
+        Returns
+        --
+        [bool] True: success. False: fail
+        """
+        msg = self._out_msg.fpvModeMsg()
+        if not self.sendMsg(msg):
+            return False
+        return True
+
+    def requestLockMode(self):
+        """
+        Sends request for setting Lock mode
+        
+        Returns
+        --
+        [bool] True: success. False: fail
+        """
+        msg = self._out_msg.lockModeMsg()
+        if not self.sendMsg(msg):
+            return False
+        return True
+
+    def requestFollowMode(self):
+        """
+        Sends request for setting Follow mode
+        
+        Returns
+        --
+        [bool] True: success. False: fail
+        """
+        msg = self._out_msg.followModeMsg()
+        if not self.sendMsg(msg):
+            return False
+        return True
+
+    ####################################################
+    #                Parsing functions                 #
+    ####################################################
+    def parseFirmwareMsg(self, msg:str, seq:int):
+        try:
+            self._fw_msg.gimbal_firmware_ver= msg[8:16]
+            self._fw_msg.seq=seq
             
-            # Decode mesage            
-            val = self._in_msg.decodeMsg(server_msg.hex())
-            if val is None:
-                return False
-            data_str, data_len, cmd_id = val[0], val[1], val[2]
-            self._logger.debug("Data hex string: %s", data_str)
+            self._logger.debug("Firmware version: %s", self._fw_msg.gimbal_firmware_ver)
 
-            flag = int(data_str, base=16)
-            if flag==1:
-                return True
-            else:
-                return False
-        else:
-            self._logger.error("Could not construct msg")
+            return True
+        except Exception as e:
+            self._logger.error("Error %s", e)
             return False
 
-    def setGimbalRotation(self, yaw, pitch, err_thresh=0.5, kp=4):
+    def parseHardwareIDMsg(self, msg:str, seq:int):
+        try:
+            self._hw_msg.seq=seq
+            self._hw_msg.id = msg
+            self._logger.debug("Hardware ID: %s", self._hw_msg.id)
+
+            return True
+        except Exception as e:
+            self._logger.error("Error %s", e)
+            return False
+
+    def parseAttitudeMsg(self, msg:str, seq:int):
+        
+        try:
+            self._att_msg.seq=seq
+            self._att_msg.yaw = toInt(msg[2:4]+msg[0:2]) /10.
+            self._att_msg.pitch = toInt(msg[6:8]+msg[4:6]) /10.
+            self._att_msg.roll = toInt(msg[10:12]+msg[8:10]) /10.
+            self._att_msg.yaw_speed = toInt(msg[14:16]+msg[12:14]) /10.
+            self._att_msg.pitch_speed = toInt(msg[18:20]+msg[16:18]) /10.
+            self._att_msg.roll_speed = toInt(msg[22:24]+msg[20:22]) /10.
+
+            self._logger.debug("(yaw, pitch, roll= (%s, %s, %s)", 
+                                    self._att_msg.yaw, self._att_msg.pitch, self._att_msg.roll)
+            self._logger.debug("(yaw_speed, pitch_speed, roll_speed= (%s, %s, %s)", 
+                                    self._att_msg.yaw_speed, self._att_msg.pitch_speed, self._att_msg.roll_speed)
+            return True
+        except Exception as e:
+            self._logger.error("Error %s", e)
+            return False
+
+    def parseGimbalInfoMsg(self, msg:str, seq:int):
+        try:
+            self._record_msg.seq=seq
+            self._mountDir_msg.seq=seq
+            self._motionMode_msg.seq=seq
+            
+            self._record_msg.state = int('0x'+msg[6:8], base=16)
+            self._motionMode_msg.mode = int('0x'+msg[8:10], base=16)
+            self._mountDir_msg.dir = int('0x'+msg[10:12], base=16)
+
+            self._logger.debug("Recording state %s", self._record_msg.state)
+            self._logger.debug("Mounting direction %s", self._mountDir_msg.dir)
+            self._logger.debug("Gimbal motion mode %s", self._motionMode_msg.mode)
+            return True
+        except Exception as e:
+            self._logger.error("Error %s", e)
+            return False
+
+    def parseAutoFocusMsg(self, msg:str, seq:int):
+        
+        try:
+            self._autoFocus_msg.seq=seq
+            self._autoFocus_msg.success = bool(int('0x'+msg, base=16))
+
+            
+            self._logger.debug("Auto focus success: %s", self._autoFocus_msg.success)
+
+            return True
+        except Exception as e:
+            self._logger.error("Error %s", e)
+            return False
+
+    def parseZoomMsg(self, msg:str, seq:int):
+        
+        try:
+            self._manualZoom_msg.seq=seq
+            self._manualZoom_msg.level = int('0x'+msg[2:4]+msg[0:2], base=16) /10.
+
+            
+            self._logger.debug("Zoom level %s", self._manualZoom_msg.level)
+
+            return True
+        except Exception as e:
+            self._logger.error("Error %s", e)
+            return False
+
+    def parseManualFocusMsg(self, msg:str, seq:int):
+        
+        try:
+            self._manualFocus_msg.seq=seq
+            self._manualFocus_msg.success = bool(int('0x'+msg, base=16))
+
+            
+            self._logger.debug("Manual  focus success: %s", self._manualFocus_msg.success)
+
+            return True
+        except Exception as e:
+            self._logger.error("Error %s", e)
+            return False
+
+    def parseGimbalSpeedMsg(self, msg:str, seq:int):
+        
+        try:
+            self._gimbalSpeed_msg.seq=seq
+            self._gimbalSpeed_msg.success = bool(int('0x'+msg, base=16))
+
+            
+            self._logger.debug("Gimbal speed success: %s", self._gimbalSpeed_msg.success)
+
+            return True
+        except Exception as e:
+            self._logger.error("Error %s", e)
+            return False
+
+    def parseGimbalCenterMsg(self, msg:str, seq:int):
+        
+        try:
+            self._center_msg.seq=seq
+            self._center_msg.success = bool(int('0x'+msg, base=16))
+
+            
+            self._logger.debug("Gimbal center success: %s", self._center_msg.success)
+
+            return True
+        except Exception as e:
+            self._logger.error("Error %s", e)
+            return False
+
+    def parseFunctionFeedbackMsg(self, msg:str, seq:int):
+        
+        try:
+            self._funcFeedback_msg.seq=seq
+            self._funcFeedback_msg.info_type = int('0x'+msg, base=16)
+
+            
+            self._logger.debug("Function Feedback Code: %s", self._funcFeedback_msg.info_type)
+
+            return True
+        except Exception as e:
+            self._logger.error("Error %s", e)
+            return False
+
+    ##################################################
+    #                   Get functions                #
+    ##################################################
+    def getAttitude(self):
+        return(self._att_msg.yaw, self._att_msg.pitch, self._att_msg.roll)
+
+    def getAttitudeSpeed(self):
+        return(self._att_msg.yaw_speed, self._att_msg.pitch_speed, self._att_msg.roll_speed)
+
+    def getFirmwareVersion(self):
+        return(self._fw_msg.gimbal_firmware_ver)
+
+    def getHardwareID(self):
+        return(self._hw_msg.id)
+
+    def getRecordingState(self):
+        return(self._record_msg.state)
+
+    def getMotionMode(self):
+        return(self._motionMode_msg.mode)
+
+    def getMountingDirection(self):
+        return(self._mountDir_msg.dir)
+
+    def getFunctionFeedback(self):
+        return(self._funcFeedback_msg.info_type)
+
+    #################################################
+    #                 Set functions                 #
+    #################################################
+    def setGimbalRotation(self, yaw, pitch, err_thresh=1.0, kp=4):
         """
         Sets gimbal attitude angles yaw and pitch in degrees
 
@@ -774,20 +751,22 @@ class SIYISDK:
         th = err_thresh
         gain = kp
         while(True):
-            vals = self.getGimbalAttitude()
-            if vals is None:
-                self._logger.warning("Gimbal attitude feedback is None. Not setting rotations")
-                break
+            self.requestGimbalAttitude()
+            if self._att_msg.seq==self._last_att_seq:
+                self._logger.info("Did not get new attitude msg")
+                self.requestGimbalSpeed(0,0)
+                continue
 
-            y,p,r, y_s, p_s, r_s = vals[0], vals[1], vals[2], vals[3], vals[4], vals[5]
-            yaw_err = -yaw + y # NOTE for some reason it's reversed!!
-            pitch_err = pitch - p
+            self._last_att_seq = self._att_msg.seq
+
+            yaw_err = -yaw + self._att_msg.yaw # NOTE for some reason it's reversed!!
+            pitch_err = pitch - self._att_msg.pitch
 
             self._logger.debug("yaw_err= %s", yaw_err)
             self._logger.debug("pitch_err= %s", pitch_err)
 
             if (abs(yaw_err) <= th and abs(pitch_err)<=th):
-                ret = self.setGimbalSpeed(0, 0)
+                self.requestGimbalSpeed(0, 0)
                 self._logger.info("Goal rotation is reached")
                 break
 
@@ -795,240 +774,44 @@ class SIYISDK:
             p_speed_sp = max(min(100, int(gain*pitch_err)), -100)
             self._logger.debug("yaw speed setpoint= %s", y_speed_sp)
             self._logger.debug("pitch speed setpoint= %s", p_speed_sp)
-            ret = self.setGimbalSpeed(y_speed_sp, p_speed_sp)
-            if(not ret):
-                self._logger.warning("Could not set gimbal speed")
-                break
+            self.requestGimbalSpeed(y_speed_sp, p_speed_sp)
 
             sleep(0.1) # command frequency
 
-    def takePhoto(self):
-        """
-        Sends a message to take a single photo
+def test():
+    cam=SIYISDK(debug=False)
 
-        Returns
-        --
-        True: if success. False otherwise
-        """
-        msg = self._out_msg.takePhotoMsg()
-        if len(msg)>0:
-            good = self.sendMsg(msg)
-            if not good:
-                self._logger.error("Could not send data. Check communication")
-                return False
-
-        # NOTE ack is not yet implemented for photo
-        ack_code = self.getFuncFeedback()
-
-        if ack_code is None:
-            self._logger.warning("Could not get acknowledgement")
-            return False
-
-        if ack_code==0:
-            return True
-        else:
-            self._logger.error("Could not take photo. Error code: %s", ack_code)
-            return False
-
-    def toggleRecording(self):
-        """
-        Sends a message to toggle recording state. 
-        
-        Returns
-        --
-        [int] 1: Record is ON. Record is OFF. 2: TF card slot is empty. 3: Data loss, check SD card
-        """
-        msg = self._out_msg.recordMsg()
-        if len(msg)>0:
-            self.sendMsg(msg)
-            good = self.sendMsg(msg)
-            if not good:
-                self._logger.error("Could not send data. Check communication")
-                return False
-
-        ack_code = self.getFuncFeedback()
-        if ack_code is None:
-            self._logger.warning("Could not get acknowledgement")
-
-        if ack_code==4:
-            self._logger.error("Fail to record a video. Please check if TF card is inserted" )
-            return False
-
-        info=self.getGimbalInfo()
-        if info is None:
-            self._logger.warning("Could not get gimbal info for acknowledgement to check recording state")
-            return False
-
-        record_state= info[0]
-        
-        if record_state == 1:
-            self._logger.info("Recording is ON")
-            self._recording_on = True
-        elif record_state == 0:
-            self._logger.info("Recording is OFF")
-            self._recording_on = False
-        else:
-            self._logger.warning("Record state is unknown . Code: %s", record_state)
-
-        return record_state
-
-    def setFPVMode(self):
-        """
-        Sets FPV mode
-
-        Returns
-        --
-        True: if success. False otherwise
-        """
-        msg = self._out_msg.fpvModeMsg()
-        if len(msg)>0:
-            self.sendMsg(msg)
-            good = self.sendMsg(msg)
-            if not good:
-                self._logger.error("Could not send data. Check communication")
-                return False
-
-        ack_code = self.getFuncFeedback()
-        if ack_code is None:
-            self._logger.warning("Could not get acknowledgement")
-
-        if ack_code==0:
-            self._logger.info("Mode setting is successful" )
-            return True
-        else:
-            self._logger.warning("Could not set mode")
-            return False
-
-    def setFollowMode(self):
-        """
-        Sets FPV mode
-
-        Returns
-        --
-        True: if success. False otherwise
-        """
-        msg = self._out_msg.followModeMsg()
-        if len(msg)>0:
-            self.sendMsg(msg)
-            good = self.sendMsg(msg)
-            if not good:
-                self._logger.error("Could not send data. Check communication")
-                return False
-
-        ack_code = self.getFuncFeedback()
-        if ack_code is None:
-            self._logger.warning("Could not get acknowledgement")
-
-        if ack_code==0:
-            self._logger.info("Mode setting is successful" )
-            return True
-        else:
-            self._logger.warning("Could not set mode")
-            return False
-
-    def setLockMode(self):
-        """
-        Sets Lock mode
-
-        Returns
-        --
-        True: if success. False otherwise
-        """
-        msg = self._out_msg.lockModeMsg()
-        if len(msg)>0:
-            self.sendMsg(msg)
-            good = self.sendMsg(msg)
-            if not good:
-                self._logger.error("Could not send data. Check communication")
-                return False
-
-        ack_code = self.getFuncFeedback()
-        if ack_code is None:
-            self._logger.warning("Could not get acknowledgement")
-
-        if ack_code==0:
-            self._logger.info("Mode setting is successful" )
-            return True
-        else:
-            self._logger.warning("Could not set mode")
-            return False
-
-        
-
-if __name__ == "__main__":
-    cam = SIYISDK(debug=False)
-
-    # Max wait time before giving up on connecting, seconds
-    maxT = 3.0
-    good = cam.connect(maxWaitTime=maxT)
-    print("Connection : ", good)
-    if not good:
+    if not cam.connect():
         exit(1)
 
-    # cam._rcv_wait_t = 1.0
+    print("Firmware version: ", cam.getFirmwareVersion())
+    
+    cam.requestGimbalSpeed(10,0)
+    sleep(3)
+    cam.requestGimbalSpeed(0,0)
+    print("Attitude: ", cam.getAttitude())
+    cam.requestCenterGimbal()
 
-    # fw = cam.getFirmwareVersion()
-    # print("Firmware version: ", fw)
-    # hw = cam.getHardwareID()
-    # print("Hardware ID: ", hw)
-    # val = cam.getGimbalAttitude()
-    # if val is not None:
-    #     print("Yaw deg: ", val[0])
-    #     print("pitch deg: ", val[1])
-    #     print("Roll deg: ", val[2])
-    #     print("Yaw speed: ", val[3])
-    #     print("Pitch speed: ", val[4])
-    #     print("Roll speed: ", val[5])
+    val=cam.getRecordingState()
+    print("Recording state: ",val)
+    cam.requestRecording()
+    sleep(0.1)
+    val=cam.getRecordingState()
+    print("Recording state: ",val)
+    cam.requestRecording()
+    sleep(0.1)
+    val=cam.getRecordingState()
+    print("Recording state: ",val)
 
-    # val = cam.getGimbalInfo()
-    # if val is not None:
-    #     print("Recording state: ", val[0])
-    #     print("Mounting Direction: ", val[1])
+    print("Taking photo...")
+    cam.requestPhoto()
+    sleep(1)
+    print("Feedback: ", cam.getFunctionFeedback())
 
-    # val = cam.setAutoFocus()
-    # print("Auto focus: ", val)
+    cam.setGimbalRotation(10,20, err_thresh=1, kp=4)
+    cam.setGimbalRotation(-10,-90, err_thresh=1, kp=4)
 
-    # val = cam.setZoom(1)
-    # print("Zoom in: ", val)
-    # sleep(2)
-    # val = cam.setZoom(0)
-    # print("Stop zoom: ", val)
-    # sleep(2)
-    # val = cam.setZoom(-1)
-    # print("Zoom out: ", val)
-    # sleep(2)
-    # val = cam.setZoom(0)
-    # print("Stop zoom: ", val)
+    cam.disconnect()
 
-    # val = cam.setFocus(1)
-    # print("Manual focus, long: ", val)
-    # sleep(1)
-    # val = cam.setFocus(0)
-    # print("Manual focus, stop: ", val)
-    # sleep(1)
-    # val = cam.setFocus(-1)
-    # print("Manual focus, close: ", val)
-    # sleep(1)
-    # cam.setFocus(0)
-
-    # val = cam.setGimbalSpeed(10,10)
-    # sleep(1)
-    # val = cam.setGimbalSpeed(0,0)
-    # sleep(0.1)
-    # val = cam.centerGimbal()
-    # print("Center gimbal: ",val )
-
-    # cam.setGimbalRotation(45,-80, err_thresh=0.5, kp=4)
-    # val = cam.getGimbalAttitude()
-    # if val is not None:
-    #     yaw = val[0]
-    #     pitch = val[1]
-
-    #     print("Current yaw= ", yaw)
-    #     print("Current pitch= ", pitch)
-
-    # val = cam.takePhoto()
-    # print("Taking photo... : ", val)
-
-    # val = cam.toggleRecording()
-    # print(" Recording ON? ", cam._recording_on)
+if __name__=="__main__":
+    test()
