@@ -62,11 +62,15 @@ class SIYISDK:
         self._funcFeedback_msg=FuncFeedbackInfoMsg()
         self._att_msg=AttitdueMsg()
 
+        # Stop threads
+        self._stop = False # used to stop the above thread
+        
+        self._recv_thread = threading.Thread(target=self.recvLoop)
+
         # Connection thread
         self._last_fw_seq=0 # used to check on connection liveness
         self._conn_loop_rate = 1 # seconds
         self._conn_thread = threading.Thread(target=self.connectionLoop, args=(self._conn_loop_rate,))
-        self._stop = False # used to stop the above thread
 
         # Gimbal info thread @ 1Hz
         self._gimbal_info_loop_rate = 1
@@ -108,6 +112,7 @@ class SIYISDK:
         --
         maxWaitTime [int] Maximum time to wait before giving up on connection
         """
+        self._recv_thread.start()
         self._conn_thread.start()
         t0 = time()
         while(True):
@@ -211,6 +216,13 @@ class SIYISDK:
             self._logger.warning("%s. Did not receive message within %s second(s)", e, self._rcv_wait_t)
         return data
 
+    def recvLoop(self):
+        self._logger.debug("Started data receiving thread")
+        while( not self._stop):
+            self.bufferCallback()
+        self._logger.debug("Exiting data receiving thread")
+
+    
     def bufferCallback(self):
         """
         Receives messages and parses its content
@@ -218,6 +230,7 @@ class SIYISDK:
         buff,addr = self._socket.recvfrom(self._BUFF_SIZE)
 
         buff_str = buff.hex()
+        self._logger.debug("Buffer: %s", buff_str)
 
         # 10 bytes: STX+CTRL+Data_len+SEQ+CMD_ID+CRC16
         #            2 + 1  +    2   + 2 +   1  + 2
@@ -257,7 +270,7 @@ class SIYISDK:
             data, data_len, cmd_id, seq = val[0], val[1], val[2], val[3]
 
             if cmd_id==COMMAND.ACQUIRE_FW_VER:
-                self.parseFWVersion(data, seq)
+                self.parseFirmwareMsg(data, seq)
             elif cmd_id==COMMAND.ACQUIRE_HW_ID:
                 self.parseHardwareIDMsg(data, seq)
             elif cmd_id==COMMAND.ACQUIRE_GIMBAL_INFO:
@@ -583,17 +596,18 @@ class SIYISDK:
             return False
 
     def parseGimbalInfoMsg(self, msg:str, seq:int):
-        
         try:
             self._record_msg.seq=seq
             self._mountDir_msg.seq=seq
+            self._motionMode_msg.seq=seq
             
-            
-            self._record_msg.state = int('0x'+msg[-4:-2], base=16)
-            self._mountDir_msg.dir = int('0x'+msg[-2:], base=16)
+            self._record_msg.state = int('0x'+msg[6:8], base=16)
+            self._motionMode_msg.mode = int('0x'+msg[8:10], base=16)
+            self._mountDir_msg.dir = int('0x'+msg[10:12], base=16)
 
             self._logger.debug("Recording state %s", self._record_msg.state)
             self._logger.debug("Mounting direction %s", self._mountDir_msg.dir)
+            self._logger.debug("Gimbal motion mode %s", self._motionMode_msg.mode)
             return True
         except Exception as e:
             self._logger.error("Error %s", e)
@@ -698,10 +712,26 @@ class SIYISDK:
     def getHardwareID(self):
         return(self._hw_msg.id)
 
+    def getRecordingState(self):
+        return(self._record_msg.state)
+
 def test():
-    cam=SIYISDK(debug=True)
+    cam=SIYISDK(debug=False)
 
     if not cam.connect():
         exit(1)
+    cam.requestGimbalSpeed(10,0)
+    sleep(3)
+    cam.requestGimbalSpeed(0,0)
+    cam.requestCenterGimbal()
+
+    val=cam.getRecordingState()
+    print("Recording state: ",val)
+
+    cam.requestRecording()
+    sleep(0.1)
+    val=cam.getRecordingState()
+    print("Recording state: ",val)
+
 if __name__=="__main__":
     test()
