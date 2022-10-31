@@ -11,6 +11,78 @@ from crc16_python import crc16_str_swap
 import logging
 from utils import toHex
 
+class FirmwareMsg:
+    seq=0
+    code_board_ver=''
+    gimbal_firmware_ver=''
+    zoom_firmware_ver=''
+
+class HardwareIDMsg:
+    seq=0
+    id=''
+
+class AutoFocusMsg:
+    seq=0
+    success=False
+
+class ManualZoomMsg:
+    seq=0
+    level=-1
+
+class ManualFocusMsg:
+    seq=0
+    success=False
+
+class GimbalSpeedMsg:
+    seq=0
+    success=False
+
+class CenterMsg:
+    seq=0
+    success=False
+
+class RecordingMsg:
+    seq=0
+    state=-1
+    OFF=0
+    ON=1
+    TF_EMPTY=2
+    TD_DATA_LOSS=3
+
+class MountDirMsg:
+    seq=0
+    dir=-1
+    NORMAL=0
+    UPSIDE=1
+
+class MotionModeMsg:
+    seq=0
+    mode=-1
+    LOCK=0
+    FOLLOW=1
+    FPV=2
+
+
+class FuncFeedbackInfoMsg:
+    seq=0
+    info_type=None
+    SUCCESSFUL=0
+    PHOTO_FAIL=1
+    HDR_ON=2
+    HDR_ON=3
+    RECROD_FAIL=4
+
+class AttitdueMsg:
+    seq=    0
+    stamp=  0 # seconds
+    yaw=    0.0
+    pitch=  0.0
+    roll=   0.0
+    yaw_speed=  0.0 # deg/s
+    pitch_speed=0.0
+    roll_speed= 0.0
+
+
 class COMMAND:
     ACQUIRE_FW_VER = '01'
     ACQUIRE_HW_ID = '02'
@@ -24,16 +96,8 @@ class COMMAND:
     PHOTO_VIDEO_HDR = '0c'
     ACQUIRE_GIMBAL_ATT = '0d'
 
-class ATTITUDE:
-    seq=    0
-    stamp=  0 # seconds
-    yaw=    0.0
-    pitch=  0.0
-    roll=   0.0
-    yaw_speed=  0.0 # deg/s
-    pitch_speed=0.0
-    roll_speed= 0.0
 
+#############################################
 class SIYIMESSAGE:
     """
     Structure of SIYI camera messages
@@ -91,16 +155,18 @@ class SIYIMESSAGE:
 
         seq_hex = hex(seq)
         seq_hex = seq_hex[2:] # remove '0x'
-        if len(seq_hex)==3 or len(seq_hex)==1:
+        if len(seq_hex)==3:
             seq_hex = '0'+seq_hex
-
-        # We need to make sure we have 2 bytes (4 characters)
-        if len(seq_hex)==2:
-            seq_str = seq_hex+'00'
+        elif len(seq_hex)==1:
+            seq_hex = '000'+seq_hex
+        elif len(seq_hex)==2:
+            seq_str = '00'+seq_hex
         else:
-            low_b = seq_hex[-2:]
-            high_b = seq_hex[0:2]
-            seq_str = low_b+high_b
+            seq='0000'
+        
+        low_b = seq_hex[-2:]
+        high_b = seq_hex[0:2]
+        seq_str = low_b+high_b
 
         return seq_str
 
@@ -118,7 +184,7 @@ class SIYIMESSAGE:
         """
 
         if not isinstance(data, str):
-            self._logger.error("Data is not opf type string")
+            self._logger.error("Data is not of type string")
             return "0000"
         # We expect number of chartacters to be even (each byte is represented by two cahrs e.g. '0A')
         if (len(data)%2) != 0:
@@ -127,16 +193,18 @@ class SIYIMESSAGE:
 
         len_hex = hex(L)
         len_hex = len_hex[2:] # remove '0x'
-        if len(len_hex)==3 or len(len_hex)==1:
+        if len(len_hex)==3:
             len_hex = '0'+len_hex
-
-        # We need to make sure we have 2 bytes (4 characters)
-        if len(len_hex)==2:
-            len_str = len_hex+'00'
+        elif len(len_hex)==1:
+            len_hex = '000'+len_hex
+        elif len(len_hex)==2:
+            len_hex = '00'+len_hex
         else:
-            low_b = len_hex[-2:]
-            high_b = len_hex[0:2]
-            len_str = low_b+high_b
+            len_hex='0000'
+        
+        low_b = len_hex[-2:]
+        high_b = len_hex[0:2]
+        len_str = low_b+high_b
 
         return len_str
 
@@ -161,71 +229,44 @@ class SIYIMESSAGE:
             self._logger.error("Input message is not a string")
             return data
 
-        if len(msg)<4: # At least the number of headr bytes*2
-            self._logger.error("No data to decode")
-            return data
-
-        # Loop through bytes to find the HEADER bytes
-        start_idx = 0
-        found_header=False
-        L = range(len(msg)-4)
-        for i in L:
-            if msg[i:i+4]==self.HEADER:
-                start_idx = i
-                found_header=True
-                break
-        
-        if not found_header:
-            self._logger.debug("Didn't find message header in msg %s", msg)
-            return data
-
-        # Now we found the header
-        # remove the previous data
-        parsed_msg = msg[start_idx:]
-
         # 10 bytes: STX+CTRL+Data_len+SEQ+CMD_ID+CRC16
         #            2 + 1  +    2   + 2 +   1  + 2
         MINIMUM_DATA_LENGTH=10*2
-        if len(parsed_msg)<MINIMUM_DATA_LENGTH:
-            self._logger.error("Not enough data to encode. Number of bytes %s. Expecting >= %s bytes", len(parsed_msg)/2, MINIMUM_DATA_LENGTH)
+        if len(msg)<MINIMUM_DATA_LENGTH:
+            self._logger.error("No data to decode")
             return data
 
+        
         # Now we got minimum amount of data. Check if we have enough
         # Data length, bytes are reversed, according to SIYI SDK
-        low_b = parsed_msg[6:8] # low byte
-        high_b = parsed_msg[8:10] # high byte
+        low_b = msg[6:8] # low byte
+        high_b = msg[8:10] # high byte
         data_len = high_b+low_b
         data_len = int('0x'+data_len, base=16)
         char_len = data_len*2 # number of characters. Each byte is represented by two characters in hex, e.g. '0A'= 2 chars
 
-        # number of characters with data
-        packet_L = MINIMUM_DATA_LENGTH+char_len
-
-        if len(parsed_msg)<packet_L:
-            self._logger.debug("Parsed message does not have enough data. Expected %s, Got %s", packet_L,len(parsed_msg))
-            return data
-
-        # Now we got enough data. Check CRC16
-
         # check crc16, if msg is OK!
-        msg_crc=parsed_msg[-4:] # last 4 characters
-        payload=parsed_msg[:-4]
+        msg_crc=msg[-4:] # last 4 characters
+        payload=msg[:-4]
         expected_crc=crc16_str_swap(payload)
         if expected_crc!=msg_crc:
             self._logger.error("CRC16 is not valid. Got %s. Expected %s. Message might be corrupted!", msg_crc, expected_crc)
             return data
         
         # Sequence
-        low_b = parsed_msg[10:12] # low byte
-        high_b = parsed_msg[12:14] # high byte
+        low_b = msg[10:12] # low byte
+        high_b = msg[12:14] # high byte
         seq_hex = high_b+low_b
         seq = int('0x'+seq_hex, base=16)
         
         # CMD ID
-        cmd_id = parsed_msg[14:16]
+        cmd_id = msg[14:16]
         
         # DATA
-        data = parsed_msg[16:16+char_len]
+        if data_len>0:
+            data = msg[16:16+char_len]
+        else:
+            data=''
         
         self._data = data
         self._data_len = data_len
@@ -243,7 +284,8 @@ class SIYIMESSAGE:
         """
         seq = self.incrementSEQ(self._seq)
         data_len = self.computeDataLen(data)
-        msg_front = self.HEADER+self._ctr+data_len+seq+cmd_id+data
+        # msg_front = self.HEADER+self._ctr+data_len+seq+cmd_id+data
+        msg_front = self.HEADER+self._ctr+data_len+'0000'+cmd_id+data
         crc = crc16_str_swap(msg_front)
         if crc is not None:
             msg = msg_front+crc
@@ -413,6 +455,16 @@ class SIYIMESSAGE:
         - yaw_speed [int] in degrees
         - pitch_speed [int] in degrees
         """
+        if yaw_speed>100:
+            yaw_speed=100
+        if yaw_speed<-100:
+            yaw_speed=-100
+
+        if pitch_speed>100:
+            pitch_speed=100
+        if pitch_speed<-100:
+            pitch_speed=-100
+
         data1=toHex(yaw_speed, 8)
         data2=toHex(pitch_speed, 8)
         data=data1+data2
