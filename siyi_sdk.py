@@ -726,6 +726,9 @@ class SIYISDK:
     def getFunctionFeedback(self):
         return(self._funcFeedback_msg.info_type)
 
+    def getZoomLevel(self):
+        return(self._manualZoom_msg.level)
+
     #################################################
     #                 Set functions                 #
     #################################################
