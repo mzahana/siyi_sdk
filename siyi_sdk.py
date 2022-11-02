@@ -1,5 +1,5 @@
 """
-Python implementation of ZR10 SDK by SIYI
+Python implementation of SIYI SDK
 ZR10 webpage: http://en.siyi.biz/en/Gimbal%20Camera/ZR10/overview/
 Author : Mohamed Abdelkader
 Email: mohamedashraf123@gmail.com
