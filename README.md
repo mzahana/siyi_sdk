@@ -32,3 +32,25 @@ Python implementation of SIYI SDK for communication with ZR10 and A8 Mini camera
     cd siyi_sdk/tests
     python3 test_gimbal_rotation.py
     ```
+# Video Streaming
+## Requirements
+* OpenCV `sudo apt-get install python3-opencv -y`
+* imutils `pip install imutils`
+* Gstreamer `https://gstreamer.freedesktop.org/documentation/installing/index.html?gi-language=c`
+    
+    Ubuntu:
+    ```bash
+    sudo apt-get install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav gstreamer1.0-doc gstreamer1.0-tools gstreamer1.0-x gstreamer1.0-alsa gstreamer1.0-gl gstreamer1.0-gtk3 gstreamer1.0-qt5 gstreamer1.0-pulseaudio -y
+    ```
+- Deepstream (only for Nvidia Jetson boards)
+    (https://docs.nvidia.com/metropolis/deepstream/dev-guide/text/DS_Quickstart.html#jetson-setup)
+- For RTMP streaming
+    ```bash
+    sudo apt install ffmpeg -y
+    pip install ffmpeg-python
+    ```
+
+## Examples
+* An example of how to image frames from camera, see `tests/test_rtsp.py`
+* An example of how to stream image frame to an RTMP server, see `tests/test_rtmp_stream.py`
+* An example of how to receive an image stream from camera using RTSP and send them to an RTMP server, see `tests/test_from_rtsp_to_rtmp.py`
