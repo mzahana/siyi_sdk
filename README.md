@@ -51,8 +51,8 @@ Python implementation of SIYI SDK for communication with ZR10 and A8 Mini camera
     ```
 
 ## Examples
-* An example of how to image frames from camera, see `tests/test_rtsp.py`
-* An example of how to stream image frame to an RTMP server, see `tests/test_rtmp_stream.py`
+* An example of how to receive image frames from camera, see `tests/test_rtsp.py`
+* An example of how to stream image frames to an RTMP server, see `tests/test_rtmp_stream.py`
 * An example of how to receive an image stream from camera using RTSP and send them to an RTMP server, see `tests/test_from_rtsp_to_rtmp.py`
 
 # Tools
