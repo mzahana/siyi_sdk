@@ -256,12 +256,14 @@ class RTMPSender:
             return False
 
         try:
-            (rows,cols,channels) = self._frame.shape
+            val = self._frame.shape
+            rows = val[0]
+            cols=val[1]
             # Resize the image, if needed
             if rows != self._height or cols != self._width:
                 self._frame = cv2.resize(self._frame, (self._width,self._height), interpolation = cv2.INTER_AREA)
 
-            if self._toGray:
+            if self._toGray and (len(self._frame.shape) > 2):
                 self._frame = cv2.cvtColor(self._frame, cv2.COLOR_BGR2GRAY)
 
             self._p.stdin.write(self._frame.tobytes())
