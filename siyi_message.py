@@ -145,6 +145,7 @@ class SIYIMESSAGE:
             return "0000"
         if val> 65535:
             self._logger.warning("Sequence value is greater than 65535. Resetting to zero")
+            self._seq = 0
             return "0000"
         if val<0:
             self._logger.warning("Sequence value is negative. Resetting to zero")
