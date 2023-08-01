@@ -69,7 +69,7 @@ class FuncFeedbackInfoMsg:
     SUCCESSFUL=0
     PHOTO_FAIL=1
     HDR_ON=2
-    HDR_ON=3
+    HDR_OFF=3
     RECROD_FAIL=4
 
 class AttitdueMsg:
