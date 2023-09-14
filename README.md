@@ -31,7 +31,19 @@ Python implementation of SIYI SDK for communication with ZR10 and A8 Mini camera
     ```bash
     cd siyi_sdk/tests
     python3 test_gimbal_rotation.py
+  
     ```
+
+Use gui
+
+    ```bash
+    python3 gui/tkgui.py
+    ```
+
+
+<img src="gui/demo.gif" width=200> </img>
+<img src="gui/gui_tkinter.png" width=200> </img>
+
 # Video Streaming
 ## Requirements
 * OpenCV `sudo apt-get install python3-opencv -y`
