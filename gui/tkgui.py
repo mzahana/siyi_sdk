@@ -17,7 +17,7 @@ from siyi_sdk import SIYISDK
 # create the window window
 window = tk.Tk()
 window.title('SiYi Ground Control ( ͡❛ ͜ʖ ͡❛)')
-window.resizable(False, False)
+# window.resizable(False, False)
 window.geometry('320x240')
 
 class CamAngle:
@@ -67,7 +67,9 @@ pitch_up_button = ttk.Button(
     command=pitch_up
 )
 
-pitch_up_button.pack(expand=True)
+pitch_up_button.grid(row = 0, column = 1, pady = 2)
+
+# pitch_up_button.pack(expand=True)
 
 
 def pitch_down():
@@ -83,7 +85,8 @@ pitch_down_button = ttk.Button(
     command=pitch_down
 )
 
-pitch_down_button.pack(expand=True)
+pitch_down_button.grid(row = 2, column = 1, pady = 2)
+# pitch_down_button.pack(expand=True)
 
 
 def yaw_left():
@@ -99,7 +102,8 @@ yaw_left_button = ttk.Button(
     command=yaw_left
 )
 
-yaw_left_button.pack(expand=True)
+yaw_left_button.grid(row = 1, column = 0, pady = 2)
+# yaw_left_button.pack(expand=True)
 
 
 def yaw_right():
@@ -115,7 +119,8 @@ yaw_right_button = ttk.Button(
     command=yaw_right
 )
 
-yaw_right_button.pack(expand=True)
+yaw_right_button.grid(row = 1, column = 2, pady = 2)
+# yaw_right_button.pack(expand=True)
 
 
 # 🎯
@@ -134,7 +139,8 @@ picth_yaw_center_button = ttk.Button(
     command=picth_yaw_center
 )
 
-picth_yaw_center_button.pack(expand=True)
+picth_yaw_center_button.grid(row = 1, column = 1, pady = 2)
+# picth_yaw_center_button.pack(expand=True)
 
 
 # 🔎 ➕
@@ -153,7 +159,8 @@ zoom_in_button = ttk.Button(
     command=zoom_in
 )
 
-zoom_in_button.pack(expand=True)
+zoom_in_button.grid(row = 3, column = 0, pady = 2)
+# zoom_in_button.pack(expand=True)
 
 
 # 🔎 ➖ 
@@ -172,7 +179,8 @@ zoom_out_button = ttk.Button(
     command=zoom_out
 )
 
-zoom_out_button.pack(expand=True)
+zoom_out_button.grid(row = 3, column = 2, pady = 2)
+# zoom_out_button.pack(expand=True)
 
 
 # run the application
