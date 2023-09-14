@@ -41,7 +41,8 @@ Use gui
     ```
 
 
-<img src="gui/demo.gif" width=200> </img>
+<video src="gui/demo.mp4" controls title="Demo"></video>
+
 <img src="gui/gui_tkinter.png" width=200> </img>
 
 # Video Streaming
