@@ -54,6 +54,8 @@ if not cam.connect():
     exit(1)
 
 
+cam.requestFollowMode()
+
 def pitch_up():
     cam_angle.addPitch(5)
     cam.setGimbalRotation(cam_angle.yaw, cam_angle.pitch)
