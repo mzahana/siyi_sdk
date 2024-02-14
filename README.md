@@ -34,16 +34,16 @@ Python implementation of SIYI SDK for communication with ZR10 and A8 Mini camera
   
     ```
 
-Use gui
+* Use gui
 
     ```bash
     python3 gui/tkgui.py
     ```
 
 
-<video src="gui/demo.mp4" controls title="Demo"></video>
-
-<img src="gui/gui_tkinter.png" width=200> </img>
+    <video src="gui/demo.mp4" controls title="Demo"></video>
+    
+    <img src="gui/gui_tkinter.png" width=200> </img>
 
 # Video Streaming
 ## Requirements
