@@ -18,8 +18,16 @@ class FirmwareMsg:
     zoom_firmware_ver=''
 
 class HardwareIDMsg:
+    # x6B: ZR10
+    # x73: A8 mini
+    # x75: A2 mini
+    # x78: ZR30
+    # x82: ZT6
+    # x7A: ZT30
+    CAM_DICT ={'6B': 'ZR10', '73': 'A8 mini', '75': 'A2 mini', '78': 'ZR30', '82': 'ZT6', '7A': 'ZT30'}
     seq=0
     id=''
+    cam_type_str=''
 
 class AutoFocusMsg:
     seq=0
@@ -82,6 +90,12 @@ class AttitdueMsg:
     pitch_speed=0.0
     roll_speed= 0.0
 
+class SetGimbalAnglesMsg:
+    seq = 0
+    yaw = 0.0
+    pitch = 0.0
+    roll = 0.0
+
 
 class COMMAND:
     ACQUIRE_FW_VER = '01'
@@ -89,12 +103,13 @@ class COMMAND:
     AUTO_FOCUS = '04'
     MANUAL_ZOOM = '05'
     MANUAL_FOCUS = '06'
-    GIMBAL_ROT = '07'
+    GIMBAL_SPEED = '07'
     CENTER = '08'
     ACQUIRE_GIMBAL_INFO = '0a'
     FUNC_FEEDBACK_INFO = '0b'
     PHOTO_VIDEO_HDR = '0c'
     ACQUIRE_GIMBAL_ATT = '0d'
+    SET_GIMBAL_ATTITUDE = '0e'
 
 
 #############################################
@@ -469,5 +484,25 @@ class SIYIMESSAGE:
         data1=toHex(yaw_speed, 8)
         data2=toHex(pitch_speed, 8)
         data=data1+data2
-        cmd_id = COMMAND.GIMBAL_ROT
+        cmd_id = COMMAND.GIMBAL_SPEED
+        return self.encodeMsg(data, cmd_id)
+    
+    def setGimbalAttitude(self, target_yaw_deg, target_pitch_deg):
+        """
+        Set gimbal angles Msg.
+        Values are in degrees and depend on the camera specs.
+        The accuracy of the control angle is in one decimal place.
+        Eg: Set yaw as 60.5 degrees, the command number should be set as 605.
+        The actual angle data returned to be divided by 10 is the actual degree, accuracy in one decimal place.
+
+        Params
+        --
+        - target_yaw_deg [in16t] in degrees up to 1 decimal. e.g. 60.5 should 605
+        - pitch_speed [int16] in degrees up to 1 decimal
+        """
+
+        yaw_hex = toHex(target_yaw_deg, 8)
+        pitch_hex = toHex(target_pitch_deg, 8)
+        data = yaw_hex+pitch_hex
+        cmd_id = COMMAND.SET_GIMBAL_ATTITUDE
         return self.encodeMsg(data, cmd_id)

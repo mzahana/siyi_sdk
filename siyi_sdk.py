@@ -61,6 +61,7 @@ class SIYISDK:
         self._motionMode_msg=MotionModeMsg()
         self._funcFeedback_msg=FuncFeedbackInfoMsg()
         self._att_msg=AttitdueMsg()
+        self._set_gimbal_angles_msg=SetGimbalAnglesMsg()
         self._last_att_seq=-1
 
         # Stop threads
@@ -100,6 +101,7 @@ class SIYISDK:
         self._motionMode_msg=MotionModeMsg()
         self._funcFeedback_msg=FuncFeedbackInfoMsg()
         self._att_msg=AttitdueMsg()
+        self._set_gimbal_angles_msg=SetGimbalAnglesMsg()
 
 
         return True
@@ -229,7 +231,11 @@ class SIYISDK:
         """
         Receives messages and parses its content
         """
-        buff,addr = self._socket.recvfrom(self._BUFF_SIZE)
+        try:
+            buff,addr = self._socket.recvfrom(self._BUFF_SIZE)
+        except Exception as e:
+            self._logger.error(f"[bufferCallback] {e}")
+            return
 
         buff_str = buff.hex()
         self._logger.debug("Buffer: %s", buff_str)
@@ -281,7 +287,7 @@ class SIYISDK:
                 self.parseAttitudeMsg(data, seq)
             elif cmd_id==COMMAND.FUNC_FEEDBACK_INFO:
                 self.parseFunctionFeedbackMsg(data, seq)
-            elif cmd_id==COMMAND.GIMBAL_ROT:
+            elif cmd_id==COMMAND.GIMBAL_SPEED:
                 self.parseGimbalSpeedMsg(data, seq)
             elif cmd_id==COMMAND.AUTO_FOCUS:
                 self.parseAutoFocusMsg(data, seq)
@@ -291,6 +297,8 @@ class SIYISDK:
                 self.parseZoomMsg(data, seq)
             elif cmd_id==COMMAND.CENTER:
                 self.parseGimbalCenterMsg(data, seq)
+            elif cmd_id==COMMAND.SET_GIMBAL_ATTITUDE:
+                self.parseSetGimbalAnglesMsg(data, seq)
             else:
                 self._logger.warning("CMD ID is not recognized")
         
@@ -550,6 +558,20 @@ class SIYISDK:
         if not self.sendMsg(msg):
             return False
         return True
+    
+    def requestSetAngles(self, yaw_deg:int, pitch_deg:int):
+        """
+        Sends request to set gimbal angles
+
+        Returns
+        --
+        [bool] True: success. False: fail
+        """
+        msg = self._out_msg.setGimbalAttitude(yaw_deg, pitch_deg)
+        if not self.sendMsg(msg):
+            return False
+        return True
+
 
     ####################################################
     #                Parsing functions                 #
@@ -571,6 +593,15 @@ class SIYISDK:
             self._hw_msg.seq=seq
             self._hw_msg.id = msg
             self._logger.debug("Hardware ID: %s", self._hw_msg.id)
+            # first two characters define the camera ID
+            
+            # The numbers are reversed
+            cam_id = msg[1]+msg[0]
+            try:
+                self._hw_msg.cam_type_str = self._hw_msg.CAM_DICT[cam_id]
+            except Exception as e:
+                self._logger.error(f"Camera not recognized. Key: {cam_id}")
+                self._logger.error("Camera not recognized Error %s", e)
 
             return True
         except Exception as e:
@@ -698,6 +729,18 @@ class SIYISDK:
         except Exception as e:
             self._logger.error("Error %s", e)
             return False
+        
+    def parseSetGimbalAnglesMsg(self, msg:str, seq:int):
+        
+        try:
+            self._set_gimbal_angles_msg.seq=seq
+
+            # No need to parse the feedback angle as it is done by the parseAttitudeMsg() in a loop
+
+            return True
+        except Exception as e:
+            self._logger.error("Error %s", e)
+            return False
 
     ##################################################
     #                   Get functions                #
@@ -713,6 +756,9 @@ class SIYISDK:
 
     def getHardwareID(self):
         return(self._hw_msg.id)
+    
+    def getCameraTypeString(self):
+        return(self._hw_msg.cam_type_str)
 
     def getRecordingState(self):
         return(self._record_msg.state)
