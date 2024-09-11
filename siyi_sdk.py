@@ -12,6 +12,7 @@ from time import sleep, time
 import logging
 from utils import  toInt
 import threading
+import cameras
 
 
 class SIYISDK:
@@ -559,7 +560,7 @@ class SIYISDK:
             return False
         return True
     
-    def requestSetAngles(self, yaw_deg:int, pitch_deg:int):
+    def requestSetAngles(self, yaw_deg:float, pitch_deg:float):
         """
         Sends request to set gimbal angles
 
@@ -567,7 +568,42 @@ class SIYISDK:
         --
         [bool] True: success. False: fail
         """
-        msg = self._out_msg.setGimbalAttitude(yaw_deg, pitch_deg)
+        if self._hw_msg.cam_type_str == '':
+            self._logger.error(f"Gimbal type is not yet retrieved. Check connection.")
+            return False
+        
+        if self._hw_msg.cam_type_str == 'A8 mini':
+            if yaw_deg > cameras.A8MINI.MAX_YAW_DEG:
+                self._logger.warning(f"yaw_deg {yaw_deg} exceeds max {cameras.A8MINI.MAX_YAW_DEG}. Setting it to max")
+                yaw_deg = cameras.A8MINI.MAX_YAW_DEG
+            if yaw_deg < cameras.A8MINI.MIN_YAW_DEG:
+                self._logger.warning(f"yaw_deg {yaw_deg} exceeds min {cameras.A8MINI.MIN_YAW_DEG}. Setting it to min")
+                yaw_deg = cameras.A8MINI.MIN_YAW_DEG
+            if pitch_deg > cameras.A8MINI.MAX_PITCH_DEG:
+                self._logger.warning(f"pitch_deg {pitch_deg} exceeds max {cameras.A8MINI.MAX_PITCH_DEG}. Setting it to max")
+                pitch_deg = cameras.A8MINI.MAX_PITCH_DEG
+            if pitch_deg < cameras.A8MINI.MIN_PITCH_DEG:
+                self._logger.warning(f"pitch_deg {pitch_deg} exceeds min {cameras.A8MINI.MIN_PITCH_DEG}. Setting it to min")
+                pitch_deg = cameras.A8MINI.MIN_PITCH_DEG
+
+        elif self._hw_msg.cam_type_str == 'ZR10':
+            if yaw_deg > cameras.ZR10.MAX_YAW_DEG:
+                self._logger.warning(f"yaw_deg {yaw_deg} exceeds max {cameras.ZR10.MAX_YAW_DEG}. Setting it to max")
+                yaw_deg = cameras.ZR10.MAX_YAW_DEG
+            if yaw_deg < cameras.ZR10.MIN_YAW_DEG:
+                self._logger.warning(f"yaw_deg {yaw_deg} exceeds min {cameras.ZR10.MIN_YAW_DEG}. Setting it to min")
+                yaw_deg = cameras.ZR10.MIN_YAW_DEG
+            if pitch_deg > cameras.ZR10.MAX_PITCH_DEG:
+                self._logger.warning(f"pitch_deg {pitch_deg} exceeds max {cameras.ZR10.MAX_PITCH_DEG}. Setting it to max")
+                pitch_deg = cameras.ZR10.MAX_PITCH_DEG
+            if pitch_deg < cameras.ZR10.MIN_PITCH_DEG:
+                self._logger.warning(f"pitch_deg {pitch_deg} exceeds min {cameras.ZR10.MIN_PITCH_DEG}. Setting it to min")
+                pitch_deg = cameras.A8MINI.MIN_PITCH_DEG
+        else:
+            self._logger.warning(f"Camera not supported. Setting angles to zero")
+            return False
+
+        msg = self._out_msg.setGimbalAttitude(int(yaw_deg*10), int(pitch_deg*10))
         if not self.sendMsg(msg):
             return False
         return True

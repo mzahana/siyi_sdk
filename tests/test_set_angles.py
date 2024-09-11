@@ -23,13 +23,14 @@ def test():
     if not cam.connect():
         print("No connection ")
         exit(1)
-
-    target_yaw_deg = -135 # means 60.5
-    target_pitch_deg = 90 # means 10.0
+    cam.requestHardwareID() # Important to get the angles limits defined in cameras.py
+    sleep(1)
+    target_yaw_deg = 130.5
+    target_pitch_deg = 0.0
     cam.requestSetAngles(target_yaw_deg, target_pitch_deg)
-    sleep(2)
     print("Attitude (yaw,pitch,roll) eg:", cam.getAttitude())
 
+    print("Done and closing...")
     cam.disconnect()
 
 if __name__ == "__main__":

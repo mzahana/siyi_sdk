@@ -501,8 +501,8 @@ class SIYIMESSAGE:
         - pitch_speed [int16] in degrees up to 1 decimal
         """
 
-        yaw_hex = toHex(target_yaw_deg, 8)
-        pitch_hex = toHex(target_pitch_deg, 8)
+        yaw_hex = toHex(target_yaw_deg, 16)
+        pitch_hex = toHex(target_pitch_deg, 16)
         data = yaw_hex+pitch_hex
         cmd_id = COMMAND.SET_GIMBAL_ATTITUDE
         return self.encodeMsg(data, cmd_id)

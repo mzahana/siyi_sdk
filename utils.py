@@ -6,21 +6,33 @@ Contact: mohamedashraf123@gmail.com
 
 def toHex(intval, nbits):
     """
-    Converts an integer to hexdecimal.
-    Useful for negative integers where hex() doesn't work as expected
+    Converts an integer to hexadecimal and reverses the order of each two characters (bytes)
+    if the length of the hex string exceeds two characters.
 
     Params
     --
-    intaval: [int] Integer number
-    nbits: [int] Number of bits
+    - intval: [int] Integer number
+    - nbits: [int] Number of bits (e.g., 8 for int8_t, 16 for int16_t)
 
     Returns
     --
-    String of the hexdecimal value
+    String of the hexadecimal value, padded appropriately based on the bit size, with
+    reversed byte order for hex strings longer than 2 characters.
     """
-    h = format((intval + (1 << nbits)) % (1 << nbits),'x')
-    if len(h)==1:
-        h="0"+h
+    # Calculate the number of hex characters based on the number of bits
+    num_hex_chars = nbits // 4  # 4 bits per hex digit
+
+    # Format the number as hex and ensure it's properly adjusted for signed integers
+    h = format((intval + (1 << nbits)) % (1 << nbits), 'x')
+
+    # Pad the string with leading zeros to ensure it matches the number of hex characters
+    h = h.zfill(num_hex_chars)
+
+    # If the hex string is longer than 2 characters, reverse the order of each 2-character byte
+    if len(h) > 2:
+        # Split into chunks of 2 characters (1 byte), reverse them, and join back
+        h = ''.join([h[i:i+2] for i in range(0, len(h), 2)][::-1])
+
     return h
 
 def toInt(hexval):
