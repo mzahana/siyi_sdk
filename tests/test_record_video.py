@@ -38,6 +38,10 @@ def test():
 
     print("Recording state: ", cam.getRecordingState())
 
+    if cam.getRecordingState() == 0 :
+        print("Recrding stopped.")
+
+    print("Done!")
     cam.disconnect()
 
 if __name__ == "__main__":
