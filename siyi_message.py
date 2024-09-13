@@ -96,6 +96,17 @@ class SetGimbalAnglesMsg:
     pitch = 0.0
     roll = 0.0
 
+class RequestDataStreamMsg:
+    # data_type uint8_t
+    ATTITUDE_DATA = '01'
+    LASER_DATA = '02'
+
+    # Frequency
+    FREQ = {0: '00', 2: '01', 4: '02', 5: '03', 10: '04', 20: '05', 50: '06', 100: '07'}
+
+    seq =0 
+    data_type = 1 # uint8_t
+    data_frequency = 0 # 0 means OFF (0, 2, 4, 5, 10, 20, 50, 100)
 
 class COMMAND:
     ACQUIRE_FW_VER = '01'
@@ -110,6 +121,7 @@ class COMMAND:
     PHOTO_VIDEO_HDR = '0c'
     ACQUIRE_GIMBAL_ATT = '0d'
     SET_GIMBAL_ATTITUDE = '0e'
+    SET_DATA_STREAM = '25'
 
 
 #############################################
@@ -505,4 +517,34 @@ class SIYIMESSAGE:
         pitch_hex = toHex(target_pitch_deg, 16)
         data = yaw_hex+pitch_hex
         cmd_id = COMMAND.SET_GIMBAL_ATTITUDE
+        return self.encodeMsg(data, cmd_id)
+    
+    def dataStreamMsg(self, dtype: int, freq: int):
+        """
+        Request data stream at specific rate.
+        Supported stream are
+        Attitude and Laser. Laser only for ZT 30, but frequency is not supported yet. 
+        Frequency is supported for attitude,
+
+        Params
+        --
+        - dtype [uint8_t] 1: attitude, 2: laser
+        - freq [uint8_t] frequencey options (0: OFF, 2, 4, 5,10, 20 ,50 ,100)
+        """
+        if dtype == 1:
+            data_type_hex = RequestDataStreamMsg.ATTITUDE_DATA
+        elif dtype == 2:
+            data_type_hex = RequestDataStreamMsg.LASER_DATA
+        else:
+            self._logger.error(f"Data stream type {type} not supported. Must be 1 (atitude) or 2 (laser)")
+            return ''
+        
+        f = int(freq)
+        try:
+            f_hex = RequestDataStreamMsg.FREQ[f]
+        except Exception as e:
+            self._logger.error(f"Frequency {freq} not supported {e}. Not requesting attitude stream.")
+            return ''
+        data = data_type_hex+f_hex
+        cmd_id = COMMAND.SET_DATA_STREAM
         return self.encodeMsg(data, cmd_id)

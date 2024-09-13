@@ -26,8 +26,9 @@ def test():
 
     val = cam.requestCenterGimbal()
     sleep(1)
-
-    print("Centering gimbal: ", cam.getFunctionFeedback())
+    val = cam.requestFunctionFeedback()
+    sleep(0.1)
+    print("Centering gimbal: ", cam.getCenteringFeedback())
     print("Gimbal angles (yaw,pitch,roll) deg: ", cam.getAttitude())
 
     cam.disconnect()
