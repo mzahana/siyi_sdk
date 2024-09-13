@@ -21,15 +21,13 @@ Required:
     pip install ffmpeg-python
 """
 import cv2
-from imutils.video import VideoStream
 import logging
 from time import time, sleep
-import subprocess
 import threading
-
+import platform
 
 class SIYIRTSP:
-    def __init__(self, rtsp_url="rtsp://192.168.144.25:8554/main.264", cam_name="ZR10", debug=False) -> None:
+    def __init__(self, rtsp_url="rtsp://192.168.144.25:8554/main.264", cam_name="ZR10", debug=False, use_udp=True) -> None:
         '''
         Receives video stream from SIYI cameras
 
@@ -38,102 +36,144 @@ class SIYIRTSP:
         - rtsp_url [str] RTSP url
         - cam_name [str] camera name (optional)
         - debug [bool] print debug messages
+        - use_udp [bool] use UDP instead of TCP for RTSP transport
         '''
-        self._rtsp_url=rtsp_url
-
-        self._cam_name=cam_name
+        self._original_rtsp_url = rtsp_url  # Keep the original URL intact
+        self._rtsp_url = self._update_url_for_udp(rtsp_url, use_udp)
+        self._cam_name = cam_name
+        self._use_udp = use_udp  # Track whether we are trying UDP or TCP
 
         # Desired image width/height
-        self._width=1280
-        self._height=720
+        self._width = 640  # Lower resolution to reduce data size
+        self._height = 480
 
         # Stored image frame
-        self._frame=None
+        self._frame = None
 
-        self._debug= debug # print debug messages
-        if self._debug:
-            d_level = logging.DEBUG
-        else:
-            d_level = logging.INFO
-        LOG_FORMAT=' [%(levelname)s] %(asctime)s [SIYIRTSP::%(funcName)s] :\t%(message)s'
-        logging.basicConfig(format=LOG_FORMAT, level=d_level)
+        # Configure logging
+        self._debug = debug
         self._logger = logging.getLogger(self.__class__.__name__)
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(logging.Formatter('[%(levelname)s] %(asctime)s [SIYIRTSP::%(funcName)s]: %(message)s'))
+        self._logger.addHandler(console_handler)
+        self._logger.setLevel(logging.DEBUG if self._debug else logging.INFO)
 
-        # Flad to stop frame grapping loop, and close windows
-        self._stopped=False
+        # Flag to stop frame grabbing loop and close windows
+        self._stopped = False
+        self._recv_thread = None  # Initialize thread variable
 
-        # Show grapped frame in a window (mainly for debugging)
-        self._show_window=False
+        # Show grabbed frame in a window (mainly for debugging)
+        self._show_window = False
 
-        self._last_image_time=time()
+        self._last_image_time = time()
 
-        # timeout (seconds) before closing everything
-        # If the returned frame is None for this amount of time, exit
-        self._connection_timeout=2.0
+        # Timeout (seconds) before closing everything
+        self._connection_timeout = 2.0
 
-        # Image receiving thread
-        self._recv_thread = threading.Thread(target=self.loop)
-
-        # start stream
+        # Start stream
         self.start()
 
     def setShowWindow(self, f: bool):
-        self._show_window=f
+        self._show_window = f
 
     def getFrame(self):
         """
         Returns current image frame
         """
-        return(self._frame)
+        return self._frame
 
     def start(self):
         """
         Start receiving thread
         """
         try:
-            self._logger.info("Connecting to %s...", self._cam_name)
-            self._stream = VideoStream(self._rtsp_url).start()
+            self._logger.info("Connecting to %s using %s...", self._cam_name, "UDP" if self._use_udp else "TCP")
+
+            # Initialize the FFmpeg-based VideoCapture
+            self._stream = cv2.VideoCapture(self._rtsp_url, cv2.CAP_FFMPEG)
+
+            # Reduce buffer size for lower latency
+            self._stream.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            
+            # Set lower resolution and frame rate to reduce latency
+            self._stream.set(cv2.CAP_PROP_FRAME_WIDTH, self._width)
+            self._stream.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
+            self._stream.set(cv2.CAP_PROP_FPS, 15)  # Lower FPS to reduce processing load
+
+            if not self._stream.isOpened():
+                raise Exception(f"Failed to open RTSP stream {self._rtsp_url}")
+
+            # Start the receiving loop thread
+            self._recv_thread = threading.Thread(target=self.loop)
             self._recv_thread.start()
-            self._stopped=False
+            self._stopped = False
         except Exception as e:
-            self._logger.error(" Could not receive stream from %s. Error %s", self._cam_name, e)
-            exit(1)
-        
+            self._logger.error("Could not receive stream from %s. Error: %s", self._cam_name, e)
+
+            # Retry with the original URL if appending ?rtsp_transport=udp failed
+            if self._use_udp:
+                self._logger.info("Retrying with the default RTSP URL (no ?rtsp_transport=udp)...")
+                self._use_udp = False
+                self._rtsp_url = self._original_rtsp_url  # Reset to the original URL
+                self.start()  # Retry with the default RTSP URL
+            else:
+                self.close()
+
     def close(self):
         self._logger.info("Closing stream of %s...", self._cam_name)
         cv2.destroyAllWindows()
-        self._stream.stop()
-        self._stopped=True
+        if self._stream:
+            self._stream.release()
+        self._stopped = True
+        if self._recv_thread and self._recv_thread.is_alive():
+            self._recv_thread.join()
 
     def loop(self):
-        self._last_image_time=time()
-        while not self._stopped:
-            self._logger.debug("Reading frame form %s ...", self._cam_name)
-            self._frame = self._stream.read()
+        self._last_image_time = time()
 
-            if (time()-self._last_image_time)> self._connection_timeout:
-                self._logger.warning("Connection timeout. Exiting")
-                self.close()
-            
-            if self._frame is None:
+        while not self._stopped:
+            ret, self._frame = self._stream.read()
+
+            if not ret:
+                if (time() - self._last_image_time) > self._connection_timeout:
+                    self._logger.warning("Connection timeout. Exiting")
+                    self.close()
+                    break
                 continue
 
-            self._last_image_time=time()
+            self._last_image_time = time()
 
-            # self._frame = imutils.resize(frame, width=self._width, height=self._height)
-
+            # Log the timestamp
+            timestamp = self._stream.get(cv2.CAP_PROP_POS_MSEC)
+            if timestamp == 0:
+                timestamp = time() * 1000  # Convert seconds to milliseconds for consistency
+            self._logger.debug(f"Frame timestamp: {timestamp} ms")
 
             if self._show_window:
                 cv2.imshow('{} Stream'.format(self._cam_name), self._frame)
-                
-                key = cv2.waitKey(25) & 0xFF
-
+                key = cv2.waitKey(1) & 0xFF
                 if key == ord('q'):
                     self.close()
                     break
 
+            # Optimized delay to avoid overwhelming CPU while reducing latency
+            sleep(0.001)
+
         self._logger.warning("RTSP receiving loop is done")
         return
+
+    def _update_url_for_udp(self, rtsp_url, use_udp):
+        """
+        Modify the RTSP URL to use UDP transport if specified
+        """
+        if use_udp:
+            if "rtsp_transport" not in rtsp_url:
+                # Add UDP transport to the URL
+                if '?' in rtsp_url:
+                    return f"{rtsp_url}&rtsp_transport=udp"
+                else:
+                    return f"{rtsp_url}?rtsp_transport=udp"
+        return rtsp_url
 
 class RTMPSender:
     '''
