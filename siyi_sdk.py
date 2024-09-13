@@ -86,6 +86,8 @@ class SIYISDK:
         self._att_msg = AttitdueMsg()
         self._set_gimbal_angles_msg = SetGimbalAnglesMsg()
         self._request_data_stream_msg = RequestDataStreamMsg()
+        self._request_absolute_zoom_msg = RequestAbsoluteZoomMsg()
+        self._current_zoom_level_msg = CurrentZoomValueMsg()
         self._last_att_seq = -1
 
         return True
@@ -120,7 +122,11 @@ class SIYISDK:
                         self._g_att_thread.start()
 
                         self.requestHardwareID()
-                        sleep(1)
+                        sleep(0.2)
+                        # self.requestDataStreamAttitude(50) # Not working 12 Sept 2024!
+                        # sleep(0.5)
+                        self.requestCurrentZoomLevel()
+                        sleep(0.2)
                         return True
 
                     if (time() - t0) > maxWaitTime and not self._connected:
@@ -199,30 +205,30 @@ class SIYISDK:
                 self.disconnect()
                 break
 
-    def recvLoop(self):
-        """
-        Continuously receives data from the camera.
-        """
-        try:
-            while not self._stop:
-                try:
-                    data, addr = self._socket.recvfrom(self._BUFF_SIZE)
-                    if self._stop:
-                        break
-                    # Process the received data here...
-                except socket.timeout:
-                    # If stopping, exit without logging
-                    if self._stop:
-                        break
-                    # Otherwise, continue waiting
-                    continue
-                except OSError:
-                    # Socket closed, exit loop
-                    break
-        except Exception as e:
-            self._logger.error(f"Error in receive loop: {e}")
-        finally:
-            self._logger.info("Exiting recvLoop")
+    # def recvLoop(self):
+    #     """
+    #     Continuously receives data from the camera.
+    #     """
+    #     try:
+    #         while not self._stop:
+    #             try:
+    #                 data, addr = self._socket.recvfrom(self._BUFF_SIZE)
+    #                 if self._stop:
+    #                     break
+    #                 # Process the received data here...
+    #             except socket.timeout:
+    #                 # If stopping, exit without logging
+    #                 if self._stop:
+    #                     break
+    #                 # Otherwise, continue waiting
+    #                 continue
+    #             except OSError:
+    #                 # Socket closed, exit loop
+    #                 break
+    #     except Exception as e:
+    #         self._logger.error(f"Error in receive loop: {e}")
+    #     finally:
+    #         self._logger.info("Exiting recvLoop")
 
     def isConnected(self):
         return self._connected
@@ -364,6 +370,8 @@ class SIYISDK:
                 self.parseSetGimbalAnglesMsg(data, seq)
             elif cmd_id==COMMAND.SET_DATA_STREAM:
                 self.parseRequestStreamMsg()
+            elif cmd_id==COMMAND.CURRENT_ZOOM_VALUE:
+                self.parseCurrentZoomLevelMsg(data, seq)
             else:
                 self._logger.warning("CMD ID is not recognized")
         
@@ -485,9 +493,16 @@ class SIYISDK:
         [bool] True: success. False: fail
         """
         msg = self._out_msg.stopZoomMsg()
-        if not self.sendMsg(msg):
-            return False
-        return True
+        
+        return self.sendMsg(msg)
+    
+    def requestAbsoluteZoom(self, level: float):
+        msg = self._out_msg.absoluteZoomMsg(level)
+        return self.sendMsg(msg)
+    
+    def requestCurrentZoomLevel(self):
+        msg = self._out_msg.requestCurrentZoomMsg()
+        return self.sendMsg(msg)
 
     def requestLongFocus(self):
         """
@@ -498,9 +513,8 @@ class SIYISDK:
         [bool] True: success. False: fail
         """
         msg = self._out_msg.longFocusMsg()
-        if not self.sendMsg(msg):
-            return False
-        return True
+        
+        return self.sendMsg(msg)
 
     def requestCloseFocus(self):
         """
@@ -511,9 +525,8 @@ class SIYISDK:
         [bool] True: success. False: fail
         """
         msg = self._out_msg.closeFocusMsg()
-        if not self.sendMsg(msg):
-            return False
-        return True
+
+        return self.sendMsg(msg)
 
     def requestFocusHold(self):
         """
@@ -524,9 +537,8 @@ class SIYISDK:
         [bool] True: success. False: fail
         """
         msg = self._out_msg.stopFocusMsg()
-        if not self.sendMsg(msg):
-            return False
-        return True
+
+        return self.sendMsg(msg)
 
     def requestCenterGimbal(self):
         """
@@ -537,9 +549,8 @@ class SIYISDK:
         [bool] True: success. False: fail
         """
         msg = self._out_msg.centerMsg()
-        if not self.sendMsg(msg):
-            return False
-        return True
+
+        return self.sendMsg(msg)
 
     def requestGimbalSpeed(self, yaw_speed:int, pitch_speed:int):
         """
@@ -555,9 +566,8 @@ class SIYISDK:
         [bool] True: success. False: fail
         """
         msg = self._out_msg.gimbalSpeedMsg(yaw_speed, pitch_speed)
-        if not self.sendMsg(msg):
-            return False
-        return True
+
+        return self.sendMsg(msg)
 
     def requestPhoto(self):
         """
@@ -568,9 +578,8 @@ class SIYISDK:
         [bool] True: success. False: fail
         """
         msg = self._out_msg.takePhotoMsg()
-        if not self.sendMsg(msg):
-            return False
-        return True
+
+        return self.sendMsg(msg)
 
     def requestRecording(self):
         """
@@ -581,9 +590,8 @@ class SIYISDK:
         [bool] True: success. False: fail
         """
         msg = self._out_msg.recordMsg()
-        if not self.sendMsg(msg):
-            return False
-        return True
+
+        return self.sendMsg(msg)
 
     def requestFPVMode(self):
         """
@@ -594,9 +602,8 @@ class SIYISDK:
         [bool] True: success. False: fail
         """
         msg = self._out_msg.fpvModeMsg()
-        if not self.sendMsg(msg):
-            return False
-        return True
+
+        return self.sendMsg(msg)
 
     def requestLockMode(self):
         """
@@ -607,9 +614,8 @@ class SIYISDK:
         [bool] True: success. False: fail
         """
         msg = self._out_msg.lockModeMsg()
-        if not self.sendMsg(msg):
-            return False
-        return True
+
+        return self.sendMsg(msg)
 
     def requestFollowMode(self):
         """
@@ -620,9 +626,8 @@ class SIYISDK:
         [bool] True: success. False: fail
         """
         msg = self._out_msg.followModeMsg()
-        if not self.sendMsg(msg):
-            return False
-        return True
+
+        return self.sendMsg(msg)
     
     def requestSetAngles(self, yaw_deg:float, pitch_deg:float):
         """
@@ -668,9 +673,8 @@ class SIYISDK:
             return False
 
         msg = self._out_msg.setGimbalAttitude(int(yaw_deg*10), int(pitch_deg*10))
-        if not self.sendMsg(msg):
-            return False
-        return True
+
+        return self.sendMsg(msg)
     
     def requestDataStreamAttitude(self, freq: int):
         """
@@ -680,10 +684,10 @@ class SIYISDK:
         ---
         freq: [uint_8] frequency in Hz (0, 2, 4, 5, 10, 20, 50, 100)
         """
-        msg = self._out_msg.dataStreamAttiude(1, freq)
+        msg = self._out_msg.dataStreamMsg(1, freq)
         return self.sendMsg(msg)
     
-    def requestDataStreamAttitude(self, freq: int):
+    def requestDataStreamLaser(self, freq: int):
         """
         Send request to send laser stream at specific frequency
 
@@ -874,6 +878,18 @@ class SIYISDK:
         except Exception as e:
             self._logger.error("Error %s", e)
             return False
+        
+    def parseCurrentZoomLevelMsg(self, msg: str, seq: int):
+        try:
+            self._current_zoom_level_msg.seq = seq
+            int_part = int('0x'+msg[0:2], base=16)
+            float_part = int('0x'+msg[2:4], base=16)
+            self._current_zoom_level_msg.level = int_part + (float_part/10)
+            return True
+        except Exception as e:
+            self._logger.error("Error %s", e)
+            return False
+
 
     ##################################################
     #                   Get functions                #
@@ -907,6 +923,9 @@ class SIYISDK:
 
     def getZoomLevel(self):
         return(self._manualZoom_msg.level)
+    
+    def getCurrentZoomLevel(self):
+        return(self._current_zoom_level_msg.level)
     
     def getCenteringFeedback(self):
         return(self._center_msg.success)

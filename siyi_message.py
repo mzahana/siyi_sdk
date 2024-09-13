@@ -104,9 +104,19 @@ class RequestDataStreamMsg:
     # Frequency
     FREQ = {0: '00', 2: '01', 4: '02', 5: '03', 10: '04', 20: '05', 50: '06', 100: '07'}
 
-    seq =0 
+    seq = 0 
     data_type = 1 # uint8_t
     data_frequency = 0 # 0 means OFF (0, 2, 4, 5, 10, 20, 50, 100)
+
+class RequestAbsoluteZoomMsg:
+    seq = 0
+    success = 0
+
+class  CurrentZoomValueMsg:
+    seq = 0
+    int_part = 1
+    float_part = 0
+    level=0.0
 
 class COMMAND:
     ACQUIRE_FW_VER = '01'
@@ -122,6 +132,8 @@ class COMMAND:
     ACQUIRE_GIMBAL_ATT = '0d'
     SET_GIMBAL_ATTITUDE = '0e'
     SET_DATA_STREAM = '25'
+    ABSOLUTE_ZOOM = '0f'
+    CURRENT_ZOOM_VALUE = '18'
 
 
 #############################################
@@ -427,7 +439,7 @@ class SIYIMESSAGE:
         """
         Zoom in Msg
         """
-        data="01"
+        data=toHex(1,8)
         cmd_id = COMMAND.MANUAL_ZOOM
         return self.encodeMsg(data, cmd_id)
 
@@ -435,7 +447,7 @@ class SIYIMESSAGE:
         """
         Zoom out Msg
         """
-        data="ff"
+        data=toHex(-1,8)
         cmd_id = COMMAND.MANUAL_ZOOM
         return self.encodeMsg(data, cmd_id)
 
@@ -443,7 +455,7 @@ class SIYIMESSAGE:
         """
         Stop Zoom Msg
         """
-        data="00"
+        data=toHex(0,8)
         cmd_id = COMMAND.MANUAL_ZOOM
         return self.encodeMsg(data, cmd_id)
 
@@ -547,4 +559,28 @@ class SIYIMESSAGE:
             return ''
         data = data_type_hex+f_hex
         cmd_id = COMMAND.SET_DATA_STREAM
+        return self.encodeMsg(data, cmd_id)
+    
+    def absoluteZoomMsg(self, zoom_level: float):
+        """
+        Params
+        --
+        - zoom_level [float] the integer par
+        """
+
+        # Get the integer part
+        integer_part = int(zoom_level)
+        # Get the first decimal place as an integer
+        decimal_part = int((zoom_level * 10) % 10)
+
+        d1 = toHex(integer_part, 8)
+        d2 = toHex(decimal_part, 8)
+        data = d1+d2
+        cmd_id = COMMAND.ABSOLUTE_ZOOM
+
+        return self.encodeMsg(data, cmd_id)
+    
+    def requestCurrentZoomMsg(self):
+        data=""
+        cmd_id = COMMAND.CURRENT_ZOOM_VALUE
         return self.encodeMsg(data, cmd_id)
