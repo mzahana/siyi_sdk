@@ -9,7 +9,7 @@ setup(
     author="Claudia Ramos",
     author_email="claudia.ramos@fieb.org.br",
     packages=find_packages(exclude=["*/test",".github"]),
-    install_requires=["opencv-python>=4.0.0"],
+    install_requires=["opencv-python>=4.0.0", "imutils"],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
