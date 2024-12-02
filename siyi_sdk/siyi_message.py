@@ -7,9 +7,9 @@ Copyright 2022
 
 """
 from os import stat
-from crc16_python import crc16_str_swap
+from siyi_sdk.crc16_python import crc16_str_swap
 import logging
-from utils import toHex
+from siyi_sdk.utils import toHex
 
 class FirmwareMsg:
     seq=0
