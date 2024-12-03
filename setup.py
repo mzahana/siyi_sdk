@@ -6,8 +6,8 @@ setup(
     description="Python package implementation for Siyi SDK.",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
-    author="Claudia Ramos",
-    author_email="claudia.ramos@fieb.org.br",
+    author="Mohamed Abdelkader",
+    author_email="mohamedashraf123@gmail.com",
     packages=find_packages(exclude=["*/test",".github"]),
     install_requires=["opencv-python>=4.0.0", "imutils"],
     classifiers=[
