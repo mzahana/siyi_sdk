@@ -25,7 +25,7 @@ Python implementation of the SDK of SIYI camera-gimbal systems.
 
 * To import this module in your code, install the sdk with:
     ```bash
-    pip install git+https://github.com/Brazilian-Institute-of-Robotics/siyi_sdk.git
+    pip install git+https://github.com/mzahana/siyi_sdk.git
     ```
 * And import as follows, and then follow the test examples
     ```python
