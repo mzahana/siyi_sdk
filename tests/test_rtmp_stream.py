@@ -16,7 +16,7 @@ parent_directory = os.path.dirname(current)
   
 sys.path.append(parent_directory)
 
-from stream import RTMPSender
+from siyi_sdk.stream import RTMPSender
 
 def test():
     # Webcam

@@ -16,7 +16,7 @@ parent_directory = os.path.dirname(current)
   
 sys.path.append(parent_directory)
 
-from stream import SIYIRTSP, RTMPSender
+from siyi_sdk.stream import SIYIRTSP, RTMPSender
 
 def test():
     rtsp = SIYIRTSP(rtsp_url="rtsp://192.168.144.25:8554/main.264",debug=False)

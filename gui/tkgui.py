@@ -12,7 +12,7 @@ parent_directory = os.path.dirname(current)
   
 sys.path.append(parent_directory)
 
-from siyi_sdk import SIYISDK
+from siyi_sdk.siyi_sdk import SIYISDK
 
 # create the window window
 window = tk.Tk()

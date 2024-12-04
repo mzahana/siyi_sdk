@@ -14,8 +14,8 @@ parent_directory = os.path.dirname(current)
   
 sys.path.append(parent_directory)
 
-from stream import SIYIRTSP
-from siyi_sdk import SIYISDK
+from siyi_sdk.stream import SIYIRTSP
+from siyi_sdk.siyi_sdk import SIYISDK
 
 def test():
 

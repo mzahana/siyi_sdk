@@ -7,29 +7,28 @@ Copyright 2022
 
 """
 import socket
-from siyi_message import *
+from siyi_sdk.siyi_message import *
 from time import sleep, time
 import logging
-from utils import  toInt
+from siyi_sdk.utils import  toInt
 import threading
-import cameras
+import siyi_sdk.cameras as cameras
 
 
 class SIYISDK:
     def __init__(self, server_ip="192.168.144.25", port=37260, debug=False):
         """
-        
         Params
         --
         - server_ip [str] IP address of the camera
         - port: [int] UDP port of the camera
         """
-        self._debug= debug # print debug messages
+        self._debug = debug
         if self._debug:
             d_level = logging.DEBUG
         else:
             d_level = logging.INFO
-        LOG_FORMAT=' [%(levelname)s] %(asctime)s [SIYISDK::%(funcName)s] :\t%(message)s'
+        LOG_FORMAT = ' [%(levelname)s] %(asctime)s [SIYISDK::%(funcName)s] :\t%(message)s'
         logging.basicConfig(format=LOG_FORMAT, level=d_level)
         self._logger = logging.getLogger(self.__class__.__name__)
 
@@ -42,152 +41,229 @@ class SIYISDK:
         self._server_ip = server_ip
         self._port = port
 
-        self._BUFF_SIZE=1024
+        self._BUFF_SIZE = 1024
 
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._rcv_wait_t = 2 # Receiving wait time
+        self._rcv_wait_t = 5  # Receiving wait time
         self._socket.settimeout(self._rcv_wait_t)
 
         self.resetVars()
 
-        # Stop threads
-        self._stop = False # used to stop the above thread
+        # Stop threads flag
+        self._stop = False  
         
         self._recv_thread = threading.Thread(target=self.recvLoop)
 
         # Connection thread
-        self._last_fw_seq=0 # used to check on connection liveness
-        self._conn_loop_rate = 1 # seconds
+        self._last_fw_seq = 0  # used to check on connection liveness
+        self._conn_loop_rate = 1  # seconds
         self._conn_thread = threading.Thread(target=self.connectionLoop, args=(self._conn_loop_rate,))
 
         # Gimbal info thread @ 1Hz
         self._gimbal_info_loop_rate = 1
-        self._g_info_thread = threading.Thread(target=self.gimbalInfoLoop,
-                                                args=(self._gimbal_info_loop_rate,))
+        self._g_info_thread = threading.Thread(target=self.gimbalInfoLoop, args=(self._gimbal_info_loop_rate,))
 
         # Gimbal attitude thread @ 10Hz
         self._gimbal_att_loop_rate = 0.02
-        self._g_att_thread = threading.Thread(target=self.gimbalAttLoop,
-                                                args=(self._gimbal_att_loop_rate,))
+        self._g_att_thread = threading.Thread(target=self.gimbalAttLoop, args=(self._gimbal_att_loop_rate,))
 
     def resetVars(self):
         """
-        Resets variables to their initial values. For example, to prepare for a fresh connection
+        Resets variables to their initial values.
         """
         self._connected = False
         self._fw_msg = FirmwareMsg()
         self._hw_msg = HardwareIDMsg()
         self._autoFocus_msg = AutoFocusMsg()
-        self._manualZoom_msg=ManualZoomMsg()
-        self._manualFocus_msg=ManualFocusMsg()
-        self._gimbalSpeed_msg=GimbalSpeedMsg()
-        self._center_msg=CenterMsg()
-        self._record_msg=RecordingMsg()
-        self._mountDir_msg=MountDirMsg()
-        self._motionMode_msg=MotionModeMsg()
-        self._funcFeedback_msg=FuncFeedbackInfoMsg()
-        self._att_msg=AttitdueMsg()
-        self._set_gimbal_angles_msg=SetGimbalAnglesMsg()
+        self._manualZoom_msg = ManualZoomMsg()
+        self._manualFocus_msg = ManualFocusMsg()
+        self._gimbalSpeed_msg = GimbalSpeedMsg()
+        self._center_msg = CenterMsg()
+        self._record_msg = RecordingMsg()
+        self._mountDir_msg = MountDirMsg()
+        self._motionMode_msg = MotionModeMsg()
+        self._funcFeedback_msg = FuncFeedbackInfoMsg()
+        self._att_msg = AttitdueMsg()
+        self._set_gimbal_angles_msg = SetGimbalAnglesMsg()
         self._request_data_stream_msg = RequestDataStreamMsg()
-        self._last_att_seq=-1
+        self._request_absolute_zoom_msg = RequestAbsoluteZoomMsg()
+        self._current_zoom_level_msg = CurrentZoomValueMsg()
+        self._last_att_seq = -1
 
         return True
 
-    def connect(self, maxWaitTime=3.0):
+    def connect(self, maxWaitTime=3.0, maxRetries=3):
         """
-        Makes sure there is conenction with the camera before doing anything.
-        It requests Frimware version for some time before it gives up
-
+        Attempts to connect to the camera with retries if needed.
+        
         Params
         --
-        maxWaitTime [int] Maximum time to wait before giving up on connection
+        - maxWaitTime [float]: Maximum time to wait before giving up on connection (in seconds)
+        - maxRetries [int]: Number of times to retry connecting if it fails
         """
-        self._recv_thread.start()
-        self._conn_thread.start()
-        t0 = time()
-        while(True):
-            if self._connected:
-                self._g_info_thread.start()
-                self._g_att_thread.start()
+        retries = 0
+        while retries < maxRetries:
+            try:
+                # Initialize fresh thread instances for each connection attempt
+                self._recv_thread = threading.Thread(target=self.recvLoop)
+                self._conn_thread = threading.Thread(target=self.connectionLoop, args=(self._conn_loop_rate,))
+                self._g_info_thread = threading.Thread(target=self.gimbalInfoLoop, args=(self._gimbal_info_loop_rate,))
+                self._g_att_thread = threading.Thread(target=self.gimbalAttLoop, args=(self._gimbal_att_loop_rate,))
+                
+                self._logger.info(f"Attempting to connect to camera, attempt {retries + 1}")
+                self._recv_thread.start()
+                self._conn_thread.start()
+                t0 = time()
 
-                self.requestHardwareID()
-                sleep(1)
-                # self.requestDataStreamAttitude(50)
-                # sleep(1)
-                # self._logger.info(f"Attitude streaming state {self.getDataStreamFeedback()}")
-                return True
-            if (time() - t0)>maxWaitTime and not self._connected:
+                while True:
+                    if self._connected:
+                        self._logger.info(f"Successfully connected to camera on attempt {retries + 1}")
+                        self._g_info_thread.start()
+                        self._g_att_thread.start()
+
+                        self.requestHardwareID()
+                        sleep(0.2)
+                        # self.requestDataStreamAttitude(50) # Not working 12 Sept 2024!
+                        # sleep(0.5)
+                        self.requestCurrentZoomLevel()
+                        sleep(0.2)
+                        return True
+
+                    if (time() - t0) > maxWaitTime and not self._connected:
+                        self._logger.error("Failed to connect to camera, retrying...")
+                        self.disconnect()
+                        retries += 1
+                        break
+
+            except Exception as e:
+                self._logger.error(f"Connection attempt {retries + 1} failed: {e}")
                 self.disconnect()
-                self._logger.error("Failed to connect to camera")
-                return False
+                retries += 1
+
+        self._logger.error(f"Failed to connect after {maxRetries} retries")
+        return False
 
     def disconnect(self):
-        self._logger.info("Stopping all threads")
-        self._stop = True # stop the connection checking thread
+        """
+        Gracefully stops all threads, disconnects, and cleans up resources.
+        """
+        self._logger.info("Stopping all threads and disconnecting")
+        self._stop = True  # Signal threads to stop
+
+        # Close the socket to unblock any recvfrom() calls
+        if self._socket:
+            try:
+                self._socket.close()
+            except Exception as e:
+                self._logger.error(f"Error closing socket: {e}")
+
+        # Wait for threads to finish, if they're still alive
+        if self._recv_thread.is_alive():
+            self._recv_thread.join()
+        if self._conn_thread.is_alive():
+            self._conn_thread.join()
+        if self._g_info_thread.is_alive():
+            self._g_info_thread.join()
+        if self._g_att_thread.is_alive():
+            self._g_att_thread.join()
+
+        # Reset the stop flag and other variables
         self.resetVars()
+        self._stop = False
 
     def checkConnection(self):
         """
-        checks if there is live connection to the camera by requesting the Firmware version.
-        This function is to be run in a thread at a defined frequency
+        Checks if there is a live connection to the camera by requesting the Firmware version.
+        Runs in a thread at a defined frequency.
         """
-        self.requestFirmwareVersion()
-        sleep(0.1)
-        if self._fw_msg.seq!=self._last_fw_seq and len(self._fw_msg.gimbal_firmware_ver)>0:
-            self._connected = True
-            self._last_fw_seq=self._fw_msg.seq
-        else:
-            self._connected = False
+        try:
+            self.requestFirmwareVersion()
+            sleep(0.1)
+            if self._fw_msg.seq != self._last_fw_seq and len(self._fw_msg.gimbal_firmware_ver) > 0:
+                self._connected = True
+                self._last_fw_seq = self._fw_msg.seq
+            else:
+                self._connected = False
+        except Exception as e:
+            self._logger.error(f"Connection check failed: {e}")
+            self.disconnect()
 
     def connectionLoop(self, t):
         """
-        This function is used in a thread to check connection status periodically
+        Periodically checks connection status and resets state if disconnected.
 
         Params
         --
-        t [float] message frequency, secnod(s)
+        - t [float]: message frequency in seconds
         """
-        while(True):
-            if self._stop:
-                self._connected=False
-                self.resetVars()
-                self._logger.warning("Connection checking loop is stopped. Check your connection!")
+        while not self._stop:
+            try:
+                self.checkConnection()
+                sleep(t)
+            except Exception as e:
+                self._logger.error(f"Error in connection loop: {e}")
+                self.disconnect()
                 break
-            self.checkConnection()
-            sleep(t)
+
+    # def recvLoop(self):
+    #     """
+    #     Continuously receives data from the camera.
+    #     """
+    #     try:
+    #         while not self._stop:
+    #             try:
+    #                 data, addr = self._socket.recvfrom(self._BUFF_SIZE)
+    #                 if self._stop:
+    #                     break
+    #                 # Process the received data here...
+    #             except socket.timeout:
+    #                 # If stopping, exit without logging
+    #                 if self._stop:
+    #                     break
+    #                 # Otherwise, continue waiting
+    #                 continue
+    #             except OSError:
+    #                 # Socket closed, exit loop
+    #                 break
+    #     except Exception as e:
+    #         self._logger.error(f"Error in receive loop: {e}")
+    #     finally:
+    #         self._logger.info("Exiting recvLoop")
 
     def isConnected(self):
         return self._connected
 
     def gimbalInfoLoop(self, t):
         """
-        This function is used in a thread to get gimbal info periodically
+        Periodically requests gimbal info.
 
         Params
         --
-        t [float] message frequency, secnod(s) 
+        - t [float]: message frequency in seconds
         """
-        while(True):
-            if not self._connected:
-                self._logger.warning("Gimbal info thread is stopped. Check connection")
-                break
-            self.requestGimbalInfo()
-            sleep(t)
+        while not self._stop:
+            try:
+                self.requestGimbalInfo()
+                sleep(t)
+            except Exception as e:
+                self._logger.error(f"Error in gimbal info loop: {e}")
+                self.disconnect()
 
     def gimbalAttLoop(self, t):
         """
-        This function is used in a thread to get gimbal attitude periodically
+        Periodically requests gimbal attitude.
 
         Params
         --
-        t [float] message frequency, secnod(s) 
+        - t [float]: message frequency in seconds
         """
-        while(True):
-            if not self._connected:
-                self._logger.warning("Gimbal attitude thread is stopped. Check connection")
-                break
-            self.requestGimbalAttitude()
-            sleep(t)
+        while not self._stop:
+            try:
+                self.requestGimbalAttitude()
+                sleep(t)
+            except Exception as e:
+                self._logger.error(f"Error in gimbal attitude loop: {e}")
+                self.disconnect()
 
     def sendMsg(self, msg):
         """
@@ -294,6 +370,8 @@ class SIYISDK:
                 self.parseSetGimbalAnglesMsg(data, seq)
             elif cmd_id==COMMAND.SET_DATA_STREAM:
                 self.parseRequestStreamMsg()
+            elif cmd_id==COMMAND.CURRENT_ZOOM_VALUE:
+                self.parseCurrentZoomLevelMsg(data, seq)
             else:
                 self._logger.warning("CMD ID is not recognized")
         
@@ -415,9 +493,16 @@ class SIYISDK:
         [bool] True: success. False: fail
         """
         msg = self._out_msg.stopZoomMsg()
-        if not self.sendMsg(msg):
-            return False
-        return True
+        
+        return self.sendMsg(msg)
+    
+    def requestAbsoluteZoom(self, level: float):
+        msg = self._out_msg.absoluteZoomMsg(level)
+        return self.sendMsg(msg)
+    
+    def requestCurrentZoomLevel(self):
+        msg = self._out_msg.requestCurrentZoomMsg()
+        return self.sendMsg(msg)
 
     def requestLongFocus(self):
         """
@@ -428,9 +513,8 @@ class SIYISDK:
         [bool] True: success. False: fail
         """
         msg = self._out_msg.longFocusMsg()
-        if not self.sendMsg(msg):
-            return False
-        return True
+        
+        return self.sendMsg(msg)
 
     def requestCloseFocus(self):
         """
@@ -441,9 +525,8 @@ class SIYISDK:
         [bool] True: success. False: fail
         """
         msg = self._out_msg.closeFocusMsg()
-        if not self.sendMsg(msg):
-            return False
-        return True
+
+        return self.sendMsg(msg)
 
     def requestFocusHold(self):
         """
@@ -454,9 +537,8 @@ class SIYISDK:
         [bool] True: success. False: fail
         """
         msg = self._out_msg.stopFocusMsg()
-        if not self.sendMsg(msg):
-            return False
-        return True
+
+        return self.sendMsg(msg)
 
     def requestCenterGimbal(self):
         """
@@ -467,9 +549,8 @@ class SIYISDK:
         [bool] True: success. False: fail
         """
         msg = self._out_msg.centerMsg()
-        if not self.sendMsg(msg):
-            return False
-        return True
+
+        return self.sendMsg(msg)
 
     def requestGimbalSpeed(self, yaw_speed:int, pitch_speed:int):
         """
@@ -485,9 +566,8 @@ class SIYISDK:
         [bool] True: success. False: fail
         """
         msg = self._out_msg.gimbalSpeedMsg(yaw_speed, pitch_speed)
-        if not self.sendMsg(msg):
-            return False
-        return True
+
+        return self.sendMsg(msg)
 
     def requestPhoto(self):
         """
@@ -498,9 +578,8 @@ class SIYISDK:
         [bool] True: success. False: fail
         """
         msg = self._out_msg.takePhotoMsg()
-        if not self.sendMsg(msg):
-            return False
-        return True
+
+        return self.sendMsg(msg)
 
     def requestRecording(self):
         """
@@ -511,9 +590,8 @@ class SIYISDK:
         [bool] True: success. False: fail
         """
         msg = self._out_msg.recordMsg()
-        if not self.sendMsg(msg):
-            return False
-        return True
+
+        return self.sendMsg(msg)
 
     def requestFPVMode(self):
         """
@@ -524,9 +602,8 @@ class SIYISDK:
         [bool] True: success. False: fail
         """
         msg = self._out_msg.fpvModeMsg()
-        if not self.sendMsg(msg):
-            return False
-        return True
+
+        return self.sendMsg(msg)
 
     def requestLockMode(self):
         """
@@ -537,9 +614,8 @@ class SIYISDK:
         [bool] True: success. False: fail
         """
         msg = self._out_msg.lockModeMsg()
-        if not self.sendMsg(msg):
-            return False
-        return True
+
+        return self.sendMsg(msg)
 
     def requestFollowMode(self):
         """
@@ -550,9 +626,8 @@ class SIYISDK:
         [bool] True: success. False: fail
         """
         msg = self._out_msg.followModeMsg()
-        if not self.sendMsg(msg):
-            return False
-        return True
+
+        return self.sendMsg(msg)
     
     def requestSetAngles(self, yaw_deg:float, pitch_deg:float):
         """
@@ -598,9 +673,8 @@ class SIYISDK:
             return False
 
         msg = self._out_msg.setGimbalAttitude(int(yaw_deg*10), int(pitch_deg*10))
-        if not self.sendMsg(msg):
-            return False
-        return True
+
+        return self.sendMsg(msg)
     
     def requestDataStreamAttitude(self, freq: int):
         """
@@ -610,10 +684,10 @@ class SIYISDK:
         ---
         freq: [uint_8] frequency in Hz (0, 2, 4, 5, 10, 20, 50, 100)
         """
-        msg = self._out_msg.dataStreamAttiude(1, freq)
+        msg = self._out_msg.dataStreamMsg(1, freq)
         return self.sendMsg(msg)
     
-    def requestDataStreamAttitude(self, freq: int):
+    def requestDataStreamLaser(self, freq: int):
         """
         Send request to send laser stream at specific frequency
 
@@ -804,6 +878,18 @@ class SIYISDK:
         except Exception as e:
             self._logger.error("Error %s", e)
             return False
+        
+    def parseCurrentZoomLevelMsg(self, msg: str, seq: int):
+        try:
+            self._current_zoom_level_msg.seq = seq
+            int_part = int('0x'+msg[0:2], base=16)
+            float_part = int('0x'+msg[2:4], base=16)
+            self._current_zoom_level_msg.level = int_part + (float_part/10)
+            return True
+        except Exception as e:
+            self._logger.error("Error %s", e)
+            return False
+
 
     ##################################################
     #                   Get functions                #
@@ -837,6 +923,9 @@ class SIYISDK:
 
     def getZoomLevel(self):
         return(self._manualZoom_msg.level)
+    
+    def getCurrentZoomLevel(self):
+        return(self._current_zoom_level_msg.level)
     
     def getCenteringFeedback(self):
         return(self._center_msg.success)
