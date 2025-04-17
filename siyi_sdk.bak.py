@@ -592,7 +592,7 @@ class SIYISDK:
                 pitch_deg = cameras.ZR10.MAX_PITCH_DEG
             if pitch_deg < cameras.ZR10.MIN_PITCH_DEG:
                 self._logger.warning(f"pitch_deg {pitch_deg} exceeds min {cameras.ZR10.MIN_PITCH_DEG}. Setting it to min")
-                pitch_deg = cameras.A8MINI.MIN_PITCH_DEG
+                pitch_deg = cameras.ZR10.MIN_PITCH_DEG
 
         elif self._hw_msg.cam_type_str == 'ZT6':
             if yaw_deg > cameras.ZT6.MAX_YAW_DEG:
