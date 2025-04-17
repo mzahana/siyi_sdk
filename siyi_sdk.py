@@ -667,6 +667,20 @@ class SIYISDK:
                 pitch_deg = cameras.ZR10.MAX_PITCH_DEG
             if pitch_deg < cameras.ZR10.MIN_PITCH_DEG:
                 self._logger.warning(f"pitch_deg {pitch_deg} exceeds min {cameras.ZR10.MIN_PITCH_DEG}. Setting it to min")
+                pitch_deg = cameras.ZR10.MIN_PITCH_DEG
+
+        elif self._hw_msg.cam_type_str == 'ZT6':
+            if yaw_deg > cameras.ZT6.MAX_YAW_DEG:
+                self._logger.warning(f"yaw_deg {yaw_deg} exceeds max {cameras.ZT6.MAX_YAW_DEG}. Setting it to max")
+                yaw_deg = cameras.ZT6.MAX_YAW_DEG
+            if yaw_deg < cameras.ZT6.MIN_YAW_DEG:
+                self._logger.warning(f"yaw_deg {yaw_deg} exceeds min {cameras.ZT6.MIN_YAW_DEG}. Setting it to min")
+                yaw_deg = cameras.ZT6.MIN_YAW_DEG
+            if pitch_deg > cameras.ZT6.MAX_PITCH_DEG:
+                self._logger.warning(f"pitch_deg {pitch_deg} exceeds max {cameras.ZT6.MAX_PITCH_DEG}. Setting it to max")
+                pitch_deg = cameras.ZT6.MAX_PITCH_DEG
+            if pitch_deg < cameras.ZT6.MIN_PITCH_DEG:
+                self._logger.warning(f"pitch_deg {pitch_deg} exceeds min {cameras.ZR10.MIN_PITCH_DEG}. Setting it to min")
                 pitch_deg = cameras.A8MINI.MIN_PITCH_DEG
         else:
             self._logger.warning(f"Camera not supported. Setting angles to zero")
