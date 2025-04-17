@@ -118,6 +118,12 @@ class  CurrentZoomValueMsg:
     float_part = 0
     level=0.0
 
+class TemperatureAtPointMsg:
+    seq = 0
+    temp = 0.0
+    x = 0.0
+    y = 0.0
+
 class COMMAND:
     ACQUIRE_FW_VER = '01'
     ACQUIRE_HW_ID = '02'
@@ -134,6 +140,7 @@ class COMMAND:
     SET_DATA_STREAM = '25'
     ABSOLUTE_ZOOM = '0f'
     CURRENT_ZOOM_VALUE = '18'
+    REQUEST_TEMPERATURE_AT_POINT = '12' # CMD_ID:0x12------Request the Temperature of a Point
 
 
 #############################################
@@ -583,4 +590,22 @@ class SIYIMESSAGE:
     def requestCurrentZoomMsg(self):
         data=""
         cmd_id = COMMAND.CURRENT_ZOOM_VALUE
+        return self.encodeMsg(data, cmd_id)
+    
+    def requestTemperatureAtPointMsg(self,x,y,get_temp_flag):
+        """
+        x - x coordinate of the point; uint16_t
+        y - y coordinate of the point; uint16_t
+        get_temp_flag - uint8_t based on: 
+            0: Turn off temperature measuring
+            1: Measure the temperature once
+            2: Continuous temperature measuring at 5 Hz
+        """
+        # Default to center point and single measurement
+        x_uint16 = toHex(x, 16) # Center x coordinate (32767)
+        y_uint16 = toHex(y, 16) # Center y coordinate (32767)
+        flag_uint8 = int(get_temp_flag)
+
+        data = x_uint16 + y_uint16 + toHex(flag_uint8, 8)
+        cmd_id = COMMAND.REQUEST_TEMPERATURE_AT_POINT
         return self.encodeMsg(data, cmd_id)

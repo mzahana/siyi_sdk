@@ -88,6 +88,7 @@ class SIYISDK:
         self._request_data_stream_msg = RequestDataStreamMsg()
         self._request_absolute_zoom_msg = RequestAbsoluteZoomMsg()
         self._current_zoom_level_msg = CurrentZoomValueMsg()
+        self._temperature_at_point_msg = TemperatureAtPointMsg()
         self._last_att_seq = -1
 
         return True
@@ -372,6 +373,8 @@ class SIYISDK:
                 self.parseRequestStreamMsg()
             elif cmd_id==COMMAND.CURRENT_ZOOM_VALUE:
                 self.parseCurrentZoomLevelMsg(data, seq)
+            elif cmd_id==COMMAND.REQUEST_TEMPERATURE_AT_POINT:
+                self.parseTemperatureAtPointMsg(data, seq)
             else:
                 self._logger.warning("CMD ID is not recognized")
         
@@ -502,6 +505,10 @@ class SIYISDK:
     
     def requestCurrentZoomLevel(self):
         msg = self._out_msg.requestCurrentZoomMsg()
+        return self.sendMsg(msg)
+    
+    def requestTemperatureAtPoint(self, x: int, y: int, get_temp_flag: int):
+        msg = self._out_msg.requestTemperatureAtPointMsg(x, y, get_temp_flag)
         return self.sendMsg(msg)
 
     def requestLongFocus(self):
@@ -903,6 +910,18 @@ class SIYISDK:
         except Exception as e:
             self._logger.error("Error %s", e)
             return False
+    
+    def parseTemperatureAtPointMsg(self, msg:str, seq:int):
+        try:
+            self._temperature_at_point_msg.seq=seq
+            self._temperature_at_point_msg.temp = int('0x'+msg[2:4]+msg[0:2], base=16)/100.
+            self._temperature_at_point_msg.x = int('0x'+msg[6:8]+msg[4:6], base=16)
+            self._temperature_at_point_msg.y = int('0x'+msg[10:12]+msg[8:10], base=16)
+            #print(f"Temperature at point msg: {self._temperature_at_point_msg.temp}, {self._temperature_at_point_msg.x}, {self._temperature_at_point_msg.y}")
+            return True
+        except Exception as e:
+            self._logger.error("Error %s", e)
+            return False
 
 
     ##################################################
@@ -940,6 +959,9 @@ class SIYISDK:
     
     def getCurrentZoomLevel(self):
         return(self._current_zoom_level_msg.level)
+    
+    def getTemperatureAtPoint(self):
+        return(self._temperature_at_point_msg.temp, self._temperature_at_point_msg.x, self._temperature_at_point_msg.y)
     
     def getCenteringFeedback(self):
         return(self._center_msg.success)
