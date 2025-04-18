@@ -93,6 +93,7 @@ class SIYISDK:
         self._gimbal_camera_soft_restart_msg = GimbalCameraSoftRestartMsg()
         self._request_gimbal_camera_codec_specs_msg = RequestGimbalCameraCodecSpecsMsg()
         self._send_gimbal_camera_codec_specs_msg = SendGimbalCameraCodecSpecsMsg()
+        self._request_gimbal_camera_image_mode_msg = RequestGimbalCameraImageModeMsg()
         self._last_att_seq = -1
 
         return True
@@ -402,6 +403,9 @@ class SIYISDK:
             elif cmd_id==COMMAND.SEND_CODEC_SPECS_TO_GIMBAL_CAMERA:
                 #print("-Send codec specs to gimbal camera")
                 self.parseSendGimbalCameraCodecSpecsMsg(data, seq)
+            elif cmd_id==COMMAND.REQUEST_GIMBAL_CAMERA_IMAGE_MODE:
+                #print("-Request gimbal camera image mode")
+                self.parseRequestGimbalCameraImageModeMsg(data, seq)
             else:
                 self._logger.warning("CMD ID is not recognized")
         
@@ -550,6 +554,10 @@ class SIYISDK:
     
     def sendGimbalCameraCodecSpecs(self, stream_type: int, video_enc_type: int, resolution_l: int, resolution_h: int, video_bitrate: int):
         msg = self._out_msg.sendGimbalCameraCodecSpecsMsg(stream_type, video_enc_type, resolution_l, resolution_h, video_bitrate)
+        return self.sendMsg(msg)
+    
+    def requestGimbalCameraImageMode(self):
+        msg = self._out_msg.requestGimbalCameraImageModeMsg()
         return self.sendMsg(msg)
 
     def requestLongFocus(self):
@@ -1021,6 +1029,39 @@ class SIYISDK:
             self._send_gimbal_camera_codec_specs_msg.sta = 0 # Failed
             return False
     
+    def parseRequestGimbalCameraImageModeMsg(self, msg: str, seq: int):
+        """
+        Parse the gimbal camera image mode request message.
+        
+        Parameters:
+        - msg (str): Hex string of the ACK data format (e.g., "03")
+        - seq (int): Sequence number to associate with this message
+        """
+        try:
+            # Convert the hex string to integer (msg is a single byte: vdisp_mode)
+            vdisp_mode = int(msg, 16)
+
+            # Map vdisp_mode to description
+            image_mode_map = {
+                0: "Split Screen (Main: Zoom & Thermal. Sub: Wide Angle)",
+                1: "Split Screen (Main: Wide Angle & Thermal. Sub: Zoom)",
+                2: "Split Screen (Main: Zoom & Wide Angle. Sub: Thermal)",
+                3: "Single Images (Main: Zoom. Sub: Thermal)",
+                4: "Single Images (Main: Zoom. Sub: Wide Angle)",
+                5: "Single Images (Main: Wide Angle. Sub: Thermal)",
+                6: "Single Images (Main: Wide Angle. Sub: Zoom)",
+                7: "Single Images (Main: Thermal. Sub: Zoom)",
+                8: "Single Images (Main: Thermal. Sub: Wide Angle)",
+            }
+
+            # Assign values to the message object
+            self._request_gimbal_camera_image_mode_msg.seq = seq
+            self._request_gimbal_camera_image_mode_msg.vdisp_mode = vdisp_mode
+            self._request_gimbal_camera_image_mode_msg.description = image_mode_map.get(vdisp_mode, "Unknown mode")
+
+        except Exception as e:
+            print(f"Failed to parse gimbal camera image mode message: {e}")
+    
     ##################################################
     #                   Get functions                #
     ##################################################
@@ -1074,6 +1115,9 @@ class SIYISDK:
     
     def getDataStreamFeedback(self):
         return(self._request_data_stream_msg.data_type)
+    
+    def getGimbalCameraImageMode(self):
+        return(self._request_gimbal_camera_image_mode_msg.vdisp_mode, self._request_gimbal_camera_image_mode_msg.description)
 
     #################################################
     #                 Set functions                 #

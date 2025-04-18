@@ -21,4 +21,4 @@ class ZT6:
     MIN_YAW_DEG = -270.0
     MAX_PITCH_DEG = 25.0
     MIN_PITCH_DEG = -90.0
-    MAX_ZOOM = 6.0 # 10 optical * 3 digital
+    MAX_ZOOM = 6.0 

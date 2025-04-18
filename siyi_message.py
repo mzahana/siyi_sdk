@@ -142,6 +142,10 @@ class SendGimbalCameraCodecSpecsMsg:
     video_bitrate = 30 # bitrate in kbps
     reserve = 0 # 0
 
+class RequestGimbalCameraImageModeMsg:
+    seq=0
+    success=False
+
 class COMMAND:
     ACQUIRE_FW_VER = '01'
     ACQUIRE_HW_ID = '02'
@@ -162,6 +166,7 @@ class COMMAND:
     GIMBAL_CAMERA_SOFT_RESTART = '80' # CMD_ID:0x80------Gimbal Camera Soft Restart
     REQUEST_GIMBAL_CAMERA_CODEC_SPECS = '20' # CMD_ID:0x20------Request Gimbal Camera Codec Specs
     SEND_CODEC_SPECS_TO_GIMBAL_CAMERA = '21' # CMD_ID:0x21------Send Codec Specs to Gimbal Camera
+    REQUEST_GIMBAL_CAMERA_IMAGE_MODE = '10' # CMD_ID:0x10------Request Gimbal Camera Image Mode
 
 #############################################
 class SIYIMESSAGE:
@@ -662,4 +667,9 @@ class SIYIMESSAGE:
         """
         data=toHex(stream_type, 8) + toHex(video_enc_type, 8) + toHex(resolution_l, 16) + toHex(resolution_h, 16) + toHex(video_bitrate, 16)
         cmd_id = COMMAND.SEND_CODEC_SPECS_TO_GIMBAL_CAMERA
+        return self.encodeMsg(data, cmd_id)
+
+    def requestGimbalCameraImageModeMsg(self):
+        data=""
+        cmd_id = COMMAND.REQUEST_GIMBAL_CAMERA_IMAGE_MODE
         return self.encodeMsg(data, cmd_id)
