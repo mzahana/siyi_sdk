@@ -94,6 +94,7 @@ class SIYISDK:
         self._request_gimbal_camera_codec_specs_msg = RequestGimbalCameraCodecSpecsMsg()
         self._send_gimbal_camera_codec_specs_msg = SendGimbalCameraCodecSpecsMsg()
         self._request_gimbal_camera_image_mode_msg = RequestGimbalCameraImageModeMsg()
+        self._request_absolute_zoom_msg = RequestAbsoluteZoomMsg()
         self._last_att_seq = -1
 
         return True
@@ -406,6 +407,11 @@ class SIYISDK:
             elif cmd_id==COMMAND.REQUEST_GIMBAL_CAMERA_IMAGE_MODE:
                 #print("-Request gimbal camera image mode")
                 self.parseRequestGimbalCameraImageModeMsg(data, seq)
+                #print("-Send gimbal camera image mode")
+                self.parseSendGimbalCameraImageModeMsg(data, seq)
+            elif cmd_id==COMMAND.ABSOLUTE_ZOOM:
+                #print("-Absolute zoom")
+                self.parseRequestAbsoluteZoomMsg(data, seq)
             else:
                 self._logger.warning("CMD ID is not recognized")
         
@@ -563,6 +569,9 @@ class SIYISDK:
         else:
             self._logger.warning("Camera not supported for ImageMode.")
             return False
+    def sendGimbalCameraImageMode(self, vdisp_mode: int):
+        msg = self._out_msg.sendGimbalCameraImageModeMsg(vdisp_mode)
+        return self.sendMsg(msg)
 
     def requestLongFocus(self):
         """
@@ -846,6 +855,14 @@ class SIYISDK:
         except Exception as e:
             self._logger.error("Error %s", e)
             return False
+    def parseRequestAbsoluteZoomMsg(self, msg:str, seq:int):
+        try:
+            self._request_absolute_zoom_msg.seq = seq
+            self._request_absolute_zoom_msg.success = bool(int('0x'+msg, base=16))
+            return True
+        except Exception as e:
+            self._logger.error("Error %s", e)
+            return False
 
     def parseAutoFocusMsg(self, msg:str, seq:int):
         
@@ -1065,6 +1082,32 @@ class SIYISDK:
 
         except Exception as e:
             print(f"Failed to parse gimbal camera image mode message: {e}")
+    def parseSendGimbalCameraImageModeMsg(self, msg:str, seq:int):
+        """
+        Parse the gimbal camera image mode send message.
+        """
+        vdisp_mode = int(msg, 16)
+
+        # Map vdisp_mode to description
+        image_mode_map = {
+                0: "Split Screen (Main: Zoom & Thermal. Sub: Wide Angle)",
+                1: "Split Screen (Main: Wide Angle & Thermal. Sub: Zoom)",
+                2: "Split Screen (Main: Zoom & Wide Angle. Sub: Thermal)",
+                3: "Single Images (Main: Zoom. Sub: Thermal)",
+                4: "Single Images (Main: Zoom. Sub: Wide Angle)",
+                5: "Single Images (Main: Wide Angle. Sub: Thermal)",
+                6: "Single Images (Main: Wide Angle. Sub: Zoom)",
+                7: "Single Images (Main: Thermal. Sub: Zoom)",
+                8: "Single Images (Main: Thermal. Sub: Wide Angle)",
+            }
+
+        try:
+            self._send_gimbal_camera_image_mode_msg.seq = seq
+            self._send_gimbal_camera_image_mode_msg.vdisp_mode = vdisp_mode
+            self._send_gimbal_camera_image_mode_msg.description = image_mode_map.get(vdisp_mode, "Unknown mode")
+        except Exception as e:
+            print(f"Failed to parse gimbal camera image mode message: {e}")
+    
     
     ##################################################
     #                   Get functions                #

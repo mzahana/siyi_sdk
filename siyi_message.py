@@ -697,3 +697,11 @@ class SIYIMESSAGE:
         data=""
         cmd_id = COMMAND.REQUEST_GIMBAL_CAMERA_IMAGE_MODE
         return self.encodeMsg(data, cmd_id)
+    
+    def sendGimbalCameraImageModeMsg(self, vdisp_mode: int):
+        """
+        Send Gimbal Camera Image Mode Msg
+        """
+        data=toHex(vdisp_mode, 8)
+        cmd_id = COMMAND.SEND_GIMBAL_CAMERA_IMAGE_MODE
+        return self.encodeMsg(data, cmd_id)
