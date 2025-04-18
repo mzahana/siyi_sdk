@@ -777,13 +777,15 @@ class SIYISDK:
 
     def parseHardwareIDMsg(self, msg:str, seq:int):
         try:
+            
             self._hw_msg.seq=seq
             self._hw_msg.id = msg
-            self._logger.debug("Hardware ID: %s", self._hw_msg.id)
-            # first two characters define the camera ID
+
+            in_ascii = bytes.fromhex(msg).decode('ascii')[:10]
+            self._hw_msg.id = in_ascii
             
-            # The numbers are reversed
-            cam_id = msg[1]+msg[0]
+            # first two characters define the camera ID
+            cam_id = in_ascii[:2]
             try:
                 self._hw_msg.cam_type_str = self._hw_msg.CAM_DICT[cam_id]
             except Exception as e:
