@@ -13,6 +13,7 @@ import logging
 from utils import  toInt
 import threading
 import cameras
+import struct
 
 
 class SIYISDK:
@@ -970,11 +971,9 @@ class SIYISDK:
         gimbal_reboot_status: 0: No action, 1: Gimbal restart; uint8_t
         """
         try:
-            print("Gimbal camera soft restart status: %s, %s", msg[0:2], msg[2:4])
             self._gimbal_camera_soft_restart_msg.seq=seq
             self._gimbal_camera_soft_restart_msg.camera_reboot_status = int('0x'+msg[0:2], base=16)
             self._gimbal_camera_soft_restart_msg.gimbal_reboot_status = int('0x'+msg[2:4], base=16)
-            print("Gimbal camera soft restart status: %s, %s", msg[0:2], msg[2:4])
             return True
         except Exception as e:
             self._logger.error("Error %s", e)
@@ -988,29 +987,17 @@ class SIYISDK:
         Returns True if parsing successful, False otherwise
         """
         try:
+            data_bytes = bytes.fromhex(msg)
+            stream_type, video_enc_type, res_l, res_h, bitrate, frame_rate = struct.unpack('<BBHHHB', data_bytes)
+
             self._request_gimbal_camera_codec_specs_msg.seq = seq
-            self._request_gimbal_camera_codec_specs_msg.stream_type = int('0x'+msg[0:2], base=16)
-            self._request_gimbal_camera_codec_specs_msg.video_enc_type = int('0x'+msg[2:4], base=16)
-            self._request_gimbal_camera_codec_specs_msg.resolution_l = int('0x'+msg[4:7], base=16)
-            self._request_gimbal_camera_codec_specs_msg.resolution_h = int('0x'+msg[7:10], base=16) # this is okay
-            self._request_gimbal_camera_codec_specs_msg.video_bitrate = int('0x'+msg[13:16], base=16)
-            self._request_gimbal_camera_codec_specs_msg.video_framerate = int('0x'+msg[16:18], base=16)
-
-            #weird bug with parsing, so have to do this. This is based on testing
-            if self._request_gimbal_camera_codec_specs_msg.resolution_l == 2048:
-                self._request_gimbal_camera_codec_specs_msg.resolution_l = 1920
-            if self._request_gimbal_camera_codec_specs_msg.resolution_l == 0:
-                self._request_gimbal_camera_codec_specs_msg.resolution_l = 1280
-            
-            if self._request_gimbal_camera_codec_specs_msg.resolution_h == 1488:
-                self._request_gimbal_camera_codec_specs_msg.resolution_h = 720
-            if self._request_gimbal_camera_codec_specs_msg.resolution_h == 1848:
-                self._request_gimbal_camera_codec_specs_msg.resolution_h = 1080
-
-            self._request_gimbal_camera_codec_specs_msg.video_bitrate = int('0x'+msg[13:16], base=16)
-            #self._request_gimbal_camera_codec_specs_msg.video_bitrate = 0
-
-            print(msg)
+            self._request_gimbal_camera_codec_specs_msg.stream_type = stream_type
+            self._request_gimbal_camera_codec_specs_msg.video_enc_type = video_enc_type
+            self._request_gimbal_camera_codec_specs_msg.resolution_l = res_l
+            self._request_gimbal_camera_codec_specs_msg.resolution_h = res_h
+            self._request_gimbal_camera_codec_specs_msg.video_bitrate = bitrate
+            self._request_gimbal_camera_codec_specs_msg.video_framerate = frame_rate
+            #print("codec specs msg: ",self._request_gimbal_camera_codec_specs_msg)
 
             return True
         except Exception as e:

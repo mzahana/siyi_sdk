@@ -17,7 +17,7 @@ def test():
         print("No connection ")
         exit(1)
 
-    print(f"Requesting codec specs")
+    print(f"Requesting current codec specs")
     req_stream_type = 1 # 0: recording stream, 1: main stream, 2: sub stream
     val = cam.requestGimbalCameraCodecSpecs(req_stream_type)
     print(f"Request codec specs status: {val}")
