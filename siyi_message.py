@@ -124,6 +124,24 @@ class TemperatureAtPointMsg:
     x = 0.0
     y = 0.0
 
+class GimbalCameraSoftRestartMsg:
+    seq = 0
+    camera_reboot_status = 0
+    gimbal_reboot_status = 0
+
+class RequestGimbalCameraCodecSpecsMsg:
+    seq = 0
+    req_stream_type = 0 # 0: recording stream, 1: main stream, 2: sub stream
+
+class SendGimbalCameraCodecSpecsMsg:
+    seq = 0
+    stream_type = 0 # 0: recording stream, 1: main stream, 2: sub stream
+    video_enc_type = 1 # 1: H.264, 2: H.265
+    resolution_l = 1920 # 1920 or 1280
+    resolution_h = 1080 # 1080 or 720
+    video_bitrate = 30 # bitrate in kbps
+    reserve = 0 # 0
+
 class COMMAND:
     ACQUIRE_FW_VER = '01'
     ACQUIRE_HW_ID = '02'
@@ -141,7 +159,9 @@ class COMMAND:
     ABSOLUTE_ZOOM = '0f'
     CURRENT_ZOOM_VALUE = '18'
     REQUEST_TEMPERATURE_AT_POINT = '12' # CMD_ID:0x12------Request the Temperature of a Point
-
+    GIMBAL_CAMERA_SOFT_RESTART = '80' # CMD_ID:0x80------Gimbal Camera Soft Restart
+    REQUEST_GIMBAL_CAMERA_CODEC_SPECS = '20' # CMD_ID:0x20------Request Gimbal Camera Codec Specs
+    SEND_CODEC_SPECS_TO_GIMBAL_CAMERA = '21' # CMD_ID:0x21------Send Codec Specs to Gimbal Camera
 
 #############################################
 class SIYIMESSAGE:
@@ -608,4 +628,38 @@ class SIYIMESSAGE:
 
         data = x_uint16 + y_uint16 + toHex(flag_uint8, 8)
         cmd_id = COMMAND.REQUEST_TEMPERATURE_AT_POINT
+        return self.encodeMsg(data, cmd_id)
+
+    def gimbalCameraSoftRestartMsg(self, camera_reboot: int, gimbal_reboot: int):
+        """
+        Gimbal Camera Soft Restart Msg
+        camera_reboot; uint8_t
+            0: No action
+            1: Camera restart
+        gimbal_reset; uint8_t
+            0: No action
+            1: Gimbal restart
+        """
+        data=toHex(camera_reboot, 8) + toHex(gimbal_reboot, 8)
+        cmd_id = COMMAND.GIMBAL_CAMERA_SOFT_RESTART
+        return self.encodeMsg(data, cmd_id)
+
+    def requestGimbalCameraCodecSpecsMsg(self, stream_type: int):
+        """
+        Request Gimbal Camera Codec Specs Msg
+        stream_type; uint8_t
+            0: recording stream
+            1: main stream
+            2: sub stream
+        """
+        data=toHex(stream_type, 8)
+        cmd_id = COMMAND.REQUEST_GIMBAL_CAMERA_CODEC_SPECS
+        return self.encodeMsg(data, cmd_id)
+    
+    def sendGimbalCameraCodecSpecsMsg(self, stream_type: int, video_enc_type: int, resolution_l: int, resolution_h: int, video_bitrate: int):
+        """
+        Send Gimbal Camera Codec Specs Msg
+        """
+        data=toHex(stream_type, 8) + toHex(video_enc_type, 8) + toHex(resolution_l, 16) + toHex(resolution_h, 16) + toHex(video_bitrate, 16)
+        cmd_id = COMMAND.SEND_CODEC_SPECS_TO_GIMBAL_CAMERA
         return self.encodeMsg(data, cmd_id)

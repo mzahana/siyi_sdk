@@ -89,6 +89,9 @@ class SIYISDK:
         self._request_absolute_zoom_msg = RequestAbsoluteZoomMsg()
         self._current_zoom_level_msg = CurrentZoomValueMsg()
         self._temperature_at_point_msg = TemperatureAtPointMsg()
+        self._gimbal_camera_soft_restart_msg = GimbalCameraSoftRestartMsg()
+        self._request_gimbal_camera_codec_specs_msg = RequestGimbalCameraCodecSpecsMsg()
+        self._send_gimbal_camera_codec_specs_msg = SendGimbalCameraCodecSpecsMsg()
         self._last_att_seq = -1
 
         return True
@@ -348,33 +351,56 @@ class SIYISDK:
             data, data_len, cmd_id, seq = val[0], val[1], val[2], val[3]
 
             if cmd_id==COMMAND.ACQUIRE_FW_VER:
+                #print("-Firmware version")
                 self.parseFirmwareMsg(data, seq)
             elif cmd_id==COMMAND.ACQUIRE_HW_ID:
+                #print("-Hardware ID")
                 self.parseHardwareIDMsg(data, seq)
             elif cmd_id==COMMAND.ACQUIRE_GIMBAL_INFO:
+                #print("-Gimbal info")
                 self.parseGimbalInfoMsg(data, seq)
             elif cmd_id==COMMAND.ACQUIRE_GIMBAL_ATT:
+                #print("Gimbal attitude")
                 self.parseAttitudeMsg(data, seq)
             elif cmd_id==COMMAND.FUNC_FEEDBACK_INFO:
+                #print("-Function feedback")
                 self.parseFunctionFeedbackMsg(data, seq)
             elif cmd_id==COMMAND.GIMBAL_SPEED:
+                #print("-Gimbal speed")
                 self.parseGimbalSpeedMsg(data, seq)
             elif cmd_id==COMMAND.AUTO_FOCUS:
+                #print("-Auto focus")
                 self.parseAutoFocusMsg(data, seq)
             elif cmd_id==COMMAND.MANUAL_FOCUS:
+                #print("-Manual focus")
                 self.parseManualFocusMsg(data, seq)
             elif cmd_id==COMMAND.MANUAL_ZOOM:
+                #print("-Manual zoom")
                 self.parseZoomMsg(data, seq)
             elif cmd_id==COMMAND.CENTER:
+                #print("-Center")
                 self.parseGimbalCenterMsg(data, seq)
             elif cmd_id==COMMAND.SET_GIMBAL_ATTITUDE:
+                #print("-Set gimbal attitude")
                 self.parseSetGimbalAnglesMsg(data, seq)
             elif cmd_id==COMMAND.SET_DATA_STREAM:
+                #print("-Set data stream")
                 self.parseRequestStreamMsg()
             elif cmd_id==COMMAND.CURRENT_ZOOM_VALUE:
+                #print("-Current zoom value")
                 self.parseCurrentZoomLevelMsg(data, seq)
             elif cmd_id==COMMAND.REQUEST_TEMPERATURE_AT_POINT:
+                #print("-Request temperature at point")
                 self.parseTemperatureAtPointMsg(data, seq)
+            elif cmd_id==COMMAND.GIMBAL_CAMERA_SOFT_RESTART:
+                #print("-Gimbal camera soft restart")
+                self.parseGimbalCameraSoftRestartMsg(data, seq)
+            elif cmd_id==COMMAND.REQUEST_GIMBAL_CAMERA_CODEC_SPECS:
+                #print("-Request gimbal camera codec specs")
+                self.parseRequestGimbalCameraCodecSpecsMsg(data, seq)
+            elif cmd_id==COMMAND.SEND_CODEC_SPECS_TO_GIMBAL_CAMERA:
+                #print("-Send codec specs to gimbal camera")
+                self.parseSendGimbalCameraCodecSpecsMsg(data, seq)
             else:
                 self._logger.warning("CMD ID is not recognized")
         
@@ -509,6 +535,20 @@ class SIYISDK:
     
     def requestTemperatureAtPoint(self, x: int, y: int, get_temp_flag: int):
         msg = self._out_msg.requestTemperatureAtPointMsg(x, y, get_temp_flag)
+        return self.sendMsg(msg)
+    
+    def requestGimbalCameraSoftRestart(self, camera_reboot: int, gimbal_reboot: int):
+        msg = self._out_msg.gimbalCameraSoftRestartMsg(camera_reboot, gimbal_reboot)
+        #print("Gimbal camera soft restart msg: %s", msg)
+        return self.sendMsg(msg)
+    
+    def requestGimbalCameraCodecSpecs(self, stream_type: int):
+        msg = self._out_msg.requestGimbalCameraCodecSpecsMsg(stream_type)
+        #print("Request gimbal camera codec specs msg: %s", msg)
+        return self.sendMsg(msg)
+    
+    def sendGimbalCameraCodecSpecs(self, stream_type: int, video_enc_type: int, resolution_l: int, resolution_h: int, video_bitrate: int):
+        msg = self._out_msg.sendGimbalCameraCodecSpecsMsg(stream_type, video_enc_type, resolution_l, resolution_h, video_bitrate)
         return self.sendMsg(msg)
 
     def requestLongFocus(self):
@@ -923,7 +963,75 @@ class SIYISDK:
             self._logger.error("Error %s", e)
             return False
 
+    def parseGimbalCameraSoftRestartMsg(self, msg:str, seq:int):
+        """
+        Parse the gimbal camera soft restart message
+        camera_reboot_status: 0: No action, 1: Camera restart; uint8_t
+        gimbal_reboot_status: 0: No action, 1: Gimbal restart; uint8_t
+        """
+        try:
+            print("Gimbal camera soft restart status: %s, %s", msg[0:2], msg[2:4])
+            self._gimbal_camera_soft_restart_msg.seq=seq
+            self._gimbal_camera_soft_restart_msg.camera_reboot_status = int('0x'+msg[0:2], base=16)
+            self._gimbal_camera_soft_restart_msg.gimbal_reboot_status = int('0x'+msg[2:4], base=16)
+            print("Gimbal camera soft restart status: %s, %s", msg[0:2], msg[2:4])
+            return True
+        except Exception as e:
+            self._logger.error("Error %s", e)
+            return False
+    
+    def parseRequestGimbalCameraCodecSpecsMsg(self, msg:str, seq:int):
+        """
+        Parse the gimbal camera codec specs request message
+        msg: hex string containing stream type
+        seq: sequence number
+        Returns True if parsing successful, False otherwise
+        """
+        try:
+            self._request_gimbal_camera_codec_specs_msg.seq = seq
+            self._request_gimbal_camera_codec_specs_msg.stream_type = int('0x'+msg[0:2], base=16)
+            self._request_gimbal_camera_codec_specs_msg.video_enc_type = int('0x'+msg[2:4], base=16)
+            self._request_gimbal_camera_codec_specs_msg.resolution_l = int('0x'+msg[4:7], base=16)
+            self._request_gimbal_camera_codec_specs_msg.resolution_h = int('0x'+msg[7:10], base=16) # this is okay
+            self._request_gimbal_camera_codec_specs_msg.video_bitrate = int('0x'+msg[13:16], base=16)
+            self._request_gimbal_camera_codec_specs_msg.video_framerate = int('0x'+msg[16:18], base=16)
 
+            #weird bug with parsing, so have to do this. This is based on testing
+            if self._request_gimbal_camera_codec_specs_msg.resolution_l == 2048:
+                self._request_gimbal_camera_codec_specs_msg.resolution_l = 1920
+            if self._request_gimbal_camera_codec_specs_msg.resolution_l == 0:
+                self._request_gimbal_camera_codec_specs_msg.resolution_l = 1280
+            
+            if self._request_gimbal_camera_codec_specs_msg.resolution_h == 1488:
+                self._request_gimbal_camera_codec_specs_msg.resolution_h = 720
+            if self._request_gimbal_camera_codec_specs_msg.resolution_h == 1848:
+                self._request_gimbal_camera_codec_specs_msg.resolution_h = 1080
+
+            self._request_gimbal_camera_codec_specs_msg.video_bitrate = int('0x'+msg[13:16], base=16)
+            #self._request_gimbal_camera_codec_specs_msg.video_bitrate = 0
+
+            print(msg)
+
+            return True
+        except Exception as e:
+            self._logger.error("Error parsing gimbal camera codec specs request: %s", e)
+            self._request_gimbal_camera_codec_specs_msg.sta = 0 # Failed
+            return False
+        
+    def parseSendGimbalCameraCodecSpecsMsg(self, msg:str, seq:int):
+        """
+        Parses the return message from the gimbal camera codec specs send
+        """
+        try:
+            self._send_gimbal_camera_codec_specs_msg.seq = seq
+            self._send_gimbal_camera_codec_specs_msg.stream_type = int('0x'+msg[0:2], base=16)
+            self._send_gimbal_camera_codec_specs_msg.sta = bool(int('0x'+msg[2:4], base=16))
+            return True
+        except Exception as e:
+            self._logger.error("Error parsing gimbal camera codec specs send: %s", e)
+            self._send_gimbal_camera_codec_specs_msg.sta = 0 # Failed
+            return False
+    
     ##################################################
     #                   Get functions                #
     ##################################################
@@ -963,6 +1071,15 @@ class SIYISDK:
     def getTemperatureAtPoint(self):
         return(self._temperature_at_point_msg.temp, self._temperature_at_point_msg.x, self._temperature_at_point_msg.y)
     
+    def getGimbalCameraSoftRestart(self):
+        return(self._gimbal_camera_soft_restart_msg.camera_reboot_status, self._gimbal_camera_soft_restart_msg.gimbal_reboot_status)
+
+    def getGimbalCameraCodecSpecs(self):
+        return(self._request_gimbal_camera_codec_specs_msg.stream_type, self._request_gimbal_camera_codec_specs_msg.video_enc_type, self._request_gimbal_camera_codec_specs_msg.resolution_l, self._request_gimbal_camera_codec_specs_msg.resolution_h, self._request_gimbal_camera_codec_specs_msg.video_bitrate, self._request_gimbal_camera_codec_specs_msg.video_framerate)
+        
+    def getSendGimbalCameraCodecSpecs(self):
+        return(self._send_gimbal_camera_codec_specs_msg.stream_type, self._send_gimbal_camera_codec_specs_msg.sta)
+
     def getCenteringFeedback(self):
         return(self._center_msg.success)
     
