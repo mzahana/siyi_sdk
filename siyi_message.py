@@ -145,6 +145,30 @@ class SendGimbalCameraCodecSpecsMsg:
 class RequestGimbalCameraImageModeMsg:
     seq=0
     success=False
+    vdisp_mode = 0  # Display mode:
+                    # 0: Split (Main: Zoom & Thermal, Sub: Wide)
+                    # 1: Split (Main: Wide & Thermal, Sub: Zoom) 
+                    # 2: Split (Main: Zoom & Wide, Sub: Thermal)
+                    # 3: Single (Main: Zoom, Sub: Thermal)
+                    # 4: Single (Main: Zoom, Sub: Wide)
+                    # 5: Single (Main: Wide, Sub: Thermal)
+                    # 6: Single (Main: Wide, Sub: Zoom)
+                    # 7: Single (Main: Thermal, Sub: Zoom)
+                    # 8: Single (Main: Thermal, Sub: Wide)
+    description = ""  # String description of the current mode
+
+class SendGimbalCameraImageModeMsg:
+    seq = 0
+    vdisp_mode = 0  # Display mode:
+                    # 0: Split (Main: Zoom & Thermal, Sub: Wide)
+                    # 1: Split (Main: Wide & Thermal, Sub: Zoom) 
+                    # 2: Split (Main: Zoom & Wide, Sub: Thermal)
+                    # 3: Single (Main: Zoom, Sub: Thermal)
+                    # 4: Single (Main: Zoom, Sub: Wide)
+                    # 5: Single (Main: Wide, Sub: Thermal)
+                    # 6: Single (Main: Wide, Sub: Zoom)
+                    # 7: Single (Main: Thermal, Sub: Zoom)
+                    # 8: Single (Main: Thermal, Sub: Wide)
 
 class COMMAND:
     ACQUIRE_FW_VER = '01'
@@ -167,7 +191,7 @@ class COMMAND:
     REQUEST_GIMBAL_CAMERA_CODEC_SPECS = '20' # CMD_ID:0x20------Request Gimbal Camera Codec Specs
     SEND_CODEC_SPECS_TO_GIMBAL_CAMERA = '21' # CMD_ID:0x21------Send Codec Specs to Gimbal Camera
     REQUEST_GIMBAL_CAMERA_IMAGE_MODE = '10' # CMD_ID:0x10------Request Gimbal Camera Image Mode
-
+    SEND_GIMBAL_CAMERA_IMAGE_MODE = '11' # CMD_ID:0x11------Send Gimbal Camera Image Mode
 #############################################
 class SIYIMESSAGE:
     """

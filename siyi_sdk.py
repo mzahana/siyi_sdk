@@ -557,8 +557,12 @@ class SIYISDK:
         return self.sendMsg(msg)
     
     def requestGimbalCameraImageMode(self):
-        msg = self._out_msg.requestGimbalCameraImageModeMsg()
-        return self.sendMsg(msg)
+        if self._hw_msg.cam_type_str == 'ZT6' or self._hw_msg.cam_type_str == 'ZT30':
+            msg = self._out_msg.requestGimbalCameraImageModeMsg()
+            return self.sendMsg(msg)
+        else:
+            self._logger.warning("Camera not supported for ImageMode.")
+            return False
 
     def requestLongFocus(self):
         """
@@ -1119,6 +1123,53 @@ class SIYISDK:
     def getGimbalCameraImageMode(self):
         return(self._request_gimbal_camera_image_mode_msg.vdisp_mode, self._request_gimbal_camera_image_mode_msg.description)
 
+    def getRTSPURLs(self):
+        if self._hw_msg.cam_type_str == 'A8 mini':
+            return({"rgb": "rtsp://192.168.144.25:8554/main.264", "thermal": ""})
+        elif self.getCameraTypeString() == 'ZT6' or self.getCameraTypeString() == 'ZT30':
+            main_url = "rtsp://192.168.144.25:8554/video1"
+            sub_url = "rtsp://192.168.144.25:8554/video2"
+            
+            # Request current image mode
+            if not self.requestGimbalCameraImageMode():
+                self._logger.warning("Failed to get image mode, defaulting to mode 3 (Single Image - Main: Zoom, Sub: Thermal)")
+                return({"rgb": main_url, "thermal": sub_url})
+            
+            # Small delay to ensure we receive the response
+            #sleep(0.1)
+            
+            try:
+                mode, _ = self.getGimbalCameraImageMode()
+                
+                # Map URLs based on image mode
+                if mode == 0:  # Split Screen (Main: Zoom & Thermal. Sub: Wide Angle)
+                    return({"rgb": main_url, "thermal": main_url})
+                elif mode == 1:  # Split Screen (Main: Wide Angle & Thermal. Sub: Zoom)
+                    return({"rgb": main_url, "thermal": main_url})
+                elif mode == 2:  # Split Screen (Main: Zoom & Wide Angle. Sub: Thermal)
+                    return({"rgb": main_url, "thermal": sub_url})
+                elif mode == 3:  # Single Image (Main: Zoom. Sub: Thermal)
+                    return({"rgb": main_url, "thermal": sub_url})
+                elif mode == 4:  # Single Image (Main: Zoom. Sub: Wide Angle)
+                    return({"rgb": main_url, "rgb_wide": sub_url})
+                elif mode == 5:  # Single Image (Main: Wide Angle. Sub: Thermal)
+                    return({"rgb": main_url, "thermal": sub_url})
+                elif mode == 6:  # Single Image (Main: Wide Angle. Sub: Zoom)
+                    return({"rgb_wide": main_url, "rgb": sub_url})
+                elif mode == 7:  # Single Image (Main: Thermal. Sub: Zoom)
+                    return({"thermal": main_url, "rgb": sub_url})
+                elif mode == 8:  # Single Image (Main: Thermal. Sub: Wide Angle)
+                    return({"thermal": main_url, "rgb_wide": sub_url})
+                else:
+                    self._logger.warning(f"Unknown image mode: {mode}")
+                    return(None, None)
+            except (AttributeError, Exception) as e:
+                self._logger.warning(f"Error getting image mode: {e}, defaulting to mode 3 (Single Image - Main: Zoom, Sub: Thermal)")
+                return({"rgb": main_url, "thermal": sub_url})
+        else:
+            self._logger.warning("Camera not supported for RTSP URLs.")
+            return(None, None)
+    
     #################################################
     #                 Set functions                 #
     #################################################
