@@ -24,15 +24,37 @@ def test():
     stream_type, video_enc_type, resolution_l, resolution_h, video_bitrate, video_framerate = cam.getGimbalCameraCodecSpecs()
     print(f"Stream type: {stream_type}, Video encoding type: {video_enc_type}, Resolution: {resolution_l}x{resolution_h}, Video bitrate: {video_bitrate} kbps, Video framerate: {video_framerate} fps")
     sleep(1)
+    req_stream_type = 2 # 0: recording stream, 1: main stream, 2: sub stream
+    print(f"Requesting current codec specs for stream type {req_stream_type}: ", cam.requestGimbalCameraCodecSpecs(req_stream_type))
+    sleep(1)
+    stream_type, video_enc_type, resolution_l, resolution_h, video_bitrate, video_framerate = cam.getGimbalCameraCodecSpecs()
+    print(f"Stream type: {stream_type}, Video encoding type: {video_enc_type}, Resolution: {resolution_l}x{resolution_h}, Video bitrate: {video_bitrate} kbps, Video framerate: {video_framerate} fps")
+    sleep(1)
     print()
-
-
 
     stream_type = 1 # 0: recording stream, 1: main stream, 2: sub stream
     video_enc_type = 1 # 1: H.264 or 2: H.265
     resolution_l = 1920 # 1920 or 1280
     resolution_h = 1080 # 1080 or 720
-    video_bitrate = 2999 # 0-3000 kbps
+    video_bitrate = 3000 # 0-3000 kbps
+    print(f"Setting codec specs to:")
+    print(f"Stream type: {stream_type}, Video encoding type: {video_enc_type}, Resolution: {resolution_l}x{resolution_h}, Video bitrate: {video_bitrate} kbps")
+    val = cam.sendGimbalCameraCodecSpecs(stream_type, video_enc_type, resolution_l, resolution_h, video_bitrate)
+    print(f"Success?: {val}")
+    sleep(2)
+
+
+    req_stream_type = 1 # 0: recording stream, 1: main stream, 2: sub stream
+    print(f"Requesting current codec specs for stream type {req_stream_type}: ", cam.requestGimbalCameraCodecSpecs(req_stream_type))
+    sleep(1)
+    stream_type, video_enc_type, resolution_l, resolution_h, video_bitrate, video_framerate = cam.getGimbalCameraCodecSpecs()
+    print(f"Stream type: {stream_type}, Video encoding type: {video_enc_type}, Resolution: {resolution_l}x{resolution_h}, Video bitrate: {video_bitrate} kbps, Video framerate: {video_framerate} fps")
+    sleep(1)
+    stream_type = 2 # 0: recording stream, 1: main stream, 2: sub stream
+    video_enc_type = 1 # 1: H.264 or 2: H.265
+    resolution_l = 640 # 1920 or 1280
+    resolution_h = 512 # 1080 or 720
+    video_bitrate = 1570 # 0-3000 kbps
     print(f"Setting codec specs to:")
     print(f"Stream type: {stream_type}, Video encoding type: {video_enc_type}, Resolution: {resolution_l}x{resolution_h}, Video bitrate: {video_bitrate} kbps")
     val = cam.sendGimbalCameraCodecSpecs(stream_type, video_enc_type, resolution_l, resolution_h, video_bitrate)
