@@ -23,7 +23,7 @@ Python implementation of the SDK of SIYI camera-gimbal systems.
 # Usage
 * Check the scripts in the `siyi_sdk/tests` directory to learn how to use the SDK
 
-* To import this module in your code, copy the `siyi_sdk.py` `siyi_message.py` `utility.py` `crc16_python.py` scripts in your code directory, and import as follows, and then follow the test examples
+* To import this module in your code, copy the `siyi_sdk.py` `siyi_message.py` `utils.py` `crc16_python.py` scripts in your code directory, and import as follows, and then follow the test examples
     ```python
     from siyi_sdk import SIYISDK
     ```
