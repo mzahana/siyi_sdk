@@ -48,7 +48,7 @@ class CamAngle:
 
 cam_angle = CamAngle()
 
-cam = SIYISDK(server_ip="192.168.1.25", port=37260)
+cam = SIYISDK(server_ip="192.168.144.25", port=37260)
 if not cam.connect():
     print("No connection ")
     exit(1)
