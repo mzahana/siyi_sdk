@@ -14,6 +14,7 @@ new-sample signal handler posts frames to the asyncio event loop.
 from __future__ import annotations
 
 import asyncio
+import os
 import threading
 import time
 from collections import deque
@@ -21,6 +22,9 @@ from collections.abc import AsyncGenerator
 from typing import Final, Literal, cast
 
 import structlog
+
+# Jetson detection: /etc/nv_tegra_release exists only on L4T (Jetson) systems.
+_IS_JETSON: Final[bool] = os.path.exists("/etc/nv_tegra_release")
 
 try:
     import gi
@@ -41,15 +45,29 @@ _log: Final = structlog.get_logger(__name__)
 
 _RECONNECT_DELAY_CAP: Final[float] = 30.0
 
-# Single pipeline for all codecs — decodebin negotiates H.264/H.265 automatically
-# from the RTSP SDP, so no codec hint is needed.
+# Desktop / generic pipeline. decodebin auto-negotiates H.264/H.265 from the
+# RTSP SDP, videoconvert produces BGR on the CPU. Used on non-Jetson hosts.
 _AUTO_PIPELINE = (
     "rtspsrc location={url} protocols={proto} latency={latency} buffer-mode=slave "
     "! decodebin "
     "! videoconvert "
     "! video/x-raw,format=BGR "
     "! queue max-size-buffers=1 leaky=downstream "
-    "! appsink name=sink emit-signals=true max-buffers=1 drop=true"
+    "! appsink name=sink emit-signals=true max-buffers=1 drop=true sync=false"
+)
+
+# Jetson pipeline. Uses the NVIDIA hardware decoder (nvv4l2decoder) with DPB
+# disabled for low latency, and nvvidconv to convert NV12→BGRx in hardware.
+# CPU videoconvert is intentionally omitted — the appsink receives BGRx and
+# the SDK strips the alpha channel in NumPy (fast view+copy). Saves a full
+# per-frame CPU conversion that otherwise stalls on Orin-class devices.
+_JETSON_PIPELINE = (
+    "rtspsrc location={url} protocols={proto} latency={latency} buffer-mode=slave "
+    "! rtp{codec}depay ! {codec}parse "
+    "! nvv4l2decoder disable-dpb=true enable-max-performance=1 "
+    "! nvvidconv ! video/x-raw,format=BGRx "
+    "! queue max-size-buffers=1 leaky=downstream "
+    "! appsink name=sink emit-signals=true max-buffers=1 drop=true sync=false"
 )
 
 
@@ -102,14 +120,24 @@ class GStreamerBackend(AbstractStreamBackend):
     def _build_pipeline_str(self) -> str:
         """Build the GStreamer pipeline string from configuration.
 
+        Resolution order:
+          1. ``StreamConfig.pipeline`` override (verbatim, with {url} substituted).
+          2. Jetson-tuned pipeline when running on L4T.
+          3. Generic decodebin pipeline elsewhere.
+
         Returns:
             Pipeline description string suitable for gst_parse_launch.
         """
+        if self._config.pipeline is not None:
+            return self._config.pipeline.format(url=self._config.rtsp_url)
+
         proto = "tcp" if self._config.transport == "tcp" else "udp"
-        return _AUTO_PIPELINE.format(
+        template = _JETSON_PIPELINE if _IS_JETSON else _AUTO_PIPELINE
+        return template.format(
             url=self._config.rtsp_url,
             proto=proto,
             latency=self._config.latency_ms,
+            codec=self._codec,
         )
 
     async def connect(self) -> None:
@@ -208,13 +236,20 @@ class GStreamerBackend(AbstractStreamBackend):
             structure = caps.get_structure(0)
             width: int = structure.get_value("width")
             height: int = structure.get_value("height")
+            fmt: str = structure.get_value("format") or "BGR"
 
             ok, map_info = buf.map(Gst.MapFlags.READ)
             if not ok:
                 return Gst.FlowReturn.OK
 
             try:
-                img = np.frombuffer(map_info.data, dtype=np.uint8).reshape(height, width, 3).copy()
+                # Jetson hardware path emits BGRx (4ch). Strip alpha so all
+                # backends deliver a 3-channel BGR frame to user code.
+                channels = 4 if fmt == "BGRx" else 3
+                raw = np.frombuffer(map_info.data, dtype=np.uint8).reshape(
+                    height, width, channels
+                )
+                img = raw[:, :, :3].copy() if channels == 4 else raw.copy()
             finally:
                 buf.unmap(map_info)
 

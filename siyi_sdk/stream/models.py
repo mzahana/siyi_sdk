@@ -77,6 +77,10 @@ class StreamConfig:
     max_reconnect_attempts: int = 0
     buffer_size: int = 1
     codec: Literal["h264", "h265"] = "h264"
+    # GStreamer pipeline override. When set, the GStreamer backend uses this
+    # string verbatim instead of its built-in pipelines. Must include an
+    # appsink named "sink" producing video/x-raw in BGR or BGRx system memory.
+    pipeline: str | None = None
 
     def __post_init__(self) -> None:
         """Validate configuration fields after initialisation.
