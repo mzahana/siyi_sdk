@@ -30,8 +30,7 @@ try:
     import gi
 
     gi.require_version("Gst", "1.0")
-    gi.require_version("GLib", "2.0")
-    from gi.repository import GLib, Gst
+    from gi.repository import Gst
 
     Gst.init(None)
     _GST_AVAILABLE = True
@@ -74,8 +73,10 @@ _JETSON_PIPELINE = (
 class GStreamerBackend(AbstractStreamBackend):
     """GStreamer + appsink RTSP backend.
 
-    Uses GLib.MainLoop in a daemon thread. Frames are extracted in the
-    new-sample signal handler and dispatched to the asyncio queue.
+    Frames are extracted in the new-sample signal handler and dispatched to
+    the asyncio queue. Bus messages are polled in a plain daemon thread instead
+    of a GLib.MainLoop, keeping the GLib lock free for GTK3/cv2 in the main
+    thread.
 
     Args:
         config: Stream configuration.
@@ -113,7 +114,6 @@ class GStreamerBackend(AbstractStreamBackend):
         self._queue: asyncio.Queue[StreamFrame] | None = None
         self._latest: deque[StreamFrame] = deque(maxlen=1)
         self._pipeline: Gst.Pipeline | None = None
-        self._glib_loop: GLib.MainLoop | None = None
         self._glib_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
 
@@ -154,13 +154,15 @@ class GStreamerBackend(AbstractStreamBackend):
         sink.connect("new-sample", self._on_sample)
 
         bus = self._pipeline.get_bus()
-        bus.add_signal_watch()
-        bus.connect("message", self._on_bus_message)
-
-        self._glib_loop = GLib.MainLoop()
+        # Poll bus messages in a plain thread instead of a GLib.MainLoop.
+        # A running GLib.MainLoop holds the GLib type-system lock, which blocks
+        # GTK3 initialisation in the main thread (e.g. cv2.imshow). Polling
+        # with timed_pop_filtered() achieves the same error/EOS detection
+        # without occupying the GLib lock.
         self._glib_thread = threading.Thread(
-            target=self._glib_loop.run,
-            name="siyi-gst-mainloop",
+            target=self._poll_bus,
+            args=(bus,),
+            name="siyi-gst-bus",
             daemon=True,
         )
         self._glib_thread.start()
@@ -169,14 +171,11 @@ class GStreamerBackend(AbstractStreamBackend):
         _log.info("gstreamer_backend_connected", url=self._config.rtsp_url)
 
     async def disconnect(self) -> None:
-        """Stop the pipeline and quit the GLib main loop."""
+        """Stop the pipeline and release resources."""
         self._stop_event.set()
         if self._pipeline is not None:
             self._pipeline.set_state(Gst.State.NULL)
             self._pipeline = None
-        if self._glib_loop is not None:
-            self._glib_loop.quit()
-            self._glib_loop = None
         if self._glib_thread is not None:
             self._glib_thread.join(timeout=5.0)
             self._glib_thread = None
@@ -212,6 +211,29 @@ class GStreamerBackend(AbstractStreamBackend):
                 yield frame
             except asyncio.TimeoutError:
                 continue
+
+    def _poll_bus(self, bus: object) -> None:
+        """Poll the GStreamer bus for error and EOS messages.
+
+        Runs in a daemon thread. Uses timed_pop_filtered so no GLib.MainLoop
+        is needed, keeping the GLib type-system lock free for the main thread.
+        """
+        gst_bus = cast("Gst.Bus", bus)
+        interval = Gst.MSECOND * 100
+        while not self._stop_event.is_set():
+            msg = gst_bus.timed_pop_filtered(
+                interval,
+                Gst.MessageType.ERROR | Gst.MessageType.EOS,
+            )
+            if msg is None:
+                continue
+            if msg.type == Gst.MessageType.ERROR:
+                err, _debug = msg.parse_error()
+                _log.error("gst_pipeline_error", error=str(err))
+                self._stop_event.set()
+            elif msg.type == Gst.MessageType.EOS:
+                _log.warning("gst_pipeline_eos")
+                self._stop_event.set()
 
     def _on_sample(self, sink: object) -> object:
         """GStreamer appsink new-sample signal handler.
@@ -286,19 +308,3 @@ class GStreamerBackend(AbstractStreamBackend):
 
         return Gst.FlowReturn.OK
 
-    def _on_bus_message(self, bus: object, message: object) -> None:
-        """GStreamer bus message handler for error and EOS events.
-
-        Args:
-            bus: The GStreamer bus (unused).
-            message: The GStreamer message object.
-        """
-        gst_message = cast("Gst.Message", message)
-        msg_type = gst_message.type
-        if msg_type == Gst.MessageType.ERROR:
-            err, _debug = gst_message.parse_error()
-            _log.error("gst_pipeline_error", error=str(err))
-            self._stop_event.set()
-        elif msg_type == Gst.MessageType.EOS:
-            _log.warning("gst_pipeline_eos")
-            self._stop_event.set()

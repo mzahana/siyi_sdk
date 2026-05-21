@@ -88,6 +88,13 @@ def main() -> None:
             await asyncio.sleep(0.05)
         await stream.stop()
 
+    # Create the window on the main thread before the asyncio thread starts the
+    # GLib main loop. GTK3 (cv2's display backend on Linux) must be initialised
+    # from the main thread; if the GLib loop is already running in another
+    # thread when imshow first tries to init GTK, it deadlocks.
+    cv2.namedWindow("SIYI GStreamer Stream", cv2.WINDOW_NORMAL)
+    cv2.waitKey(1)
+
     asyncio_thread = threading.Thread(
         target=asyncio.run,
         args=(_run(),),
