@@ -6,20 +6,25 @@
 
 """GStreamer low-latency RTSP streaming example for old-generation cameras.
 
-Demonstrates the GStreamer backend which provides hardware-accelerated H.265
+Demonstrates the GStreamer backend which provides hardware-accelerated H.264
 decoding and the lowest end-to-end latency among available backends.
 
-Target cameras: ZR30, ZR10, A8 Mini, A2 Mini, R1M (old-gen, H.265 stream).
+Target cameras: ZR30, ZR10, A8 Mini, A2 Mini, R1M (old-gen, H.264 stream).
 Stream URL: rtsp://192.168.144.25:8554/main.264
 
-GStreamer pipeline used internally:
+GStreamer pipeline used internally (desktop):
     rtspsrc location=<url> protocols=tcp latency=100 buffer-mode=slave
+    ! decodebin ! videoconvert ! video/x-raw,format=BGR
     ! queue max-size-buffers=1 leaky=downstream
-    ! rtph265depay ! h265parse
-    ! decodebin
-    ! videoconvert
-    ! video/x-raw,format=BGR
-    ! appsink name=sink emit-signals=true max-buffers=1 drop=true
+    ! appsink name=sink emit-signals=true max-buffers=1 drop=true sync=false
+
+GStreamer pipeline used internally (Jetson / L4T):
+    rtspsrc location=<url> protocols=tcp latency=100 buffer-mode=slave
+    ! rtph264depay ! h264parse
+    ! nvv4l2decoder disable-dpb=true enable-max-performance=1
+    ! nvvidconv ! video/x-raw,format=BGRx
+    ! queue max-size-buffers=1 leaky=downstream
+    ! appsink name=sink emit-signals=true max-buffers=1 drop=true sync=false
 
 Prerequisites:
     sudo apt install gstreamer1.0-plugins-good gstreamer1.0-plugins-bad python3-gi
@@ -62,7 +67,7 @@ def main() -> None:
         rtsp_url=rtsp_url,
         backend=StreamBackend.GSTREAMER,
         latency_ms=100,
-        codec="h265",
+        codec="h264",
     )
     stream = SIYIStream(config)
 
