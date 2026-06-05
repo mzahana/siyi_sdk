@@ -98,6 +98,63 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
+## High-rate control (fire-and-forget)
+
+Standard commands like `rotate()` and `set_attitude()` await an ACK from
+the gimbal before returning, and serialise concurrent calls with the
+same CMD_ID behind a per-command lock. This is correct for one-shot
+commands but unsuitable for tight control loops — at 50 Hz, ACK
+round-trip latency and lock contention starve the sender.
+
+For visual servoing, gimbal stabilisation, and any other high-rate
+control loop, use the `_nowait` variants. They write the frame with
+`CTRL=0` (no-ACK), bypass the per-CMD_ID lock, and return as soon as
+the UDP send completes.
+
+```python
+import asyncio
+from siyi_sdk import connect_udp
+
+async def main() -> None:
+    async with await connect_udp("192.168.144.25") as client:
+        # 50 Hz rate-control loop. rotate_nowait does NOT wait for ACK.
+        for _ in range(500):
+            yaw_norm, pitch_norm = 30, -20  # from your PID
+            await client.rotate_nowait(yaw_norm, pitch_norm)
+            await asyncio.sleep(0.02)
+
+        # Absolute setpoint without waiting for confirmation.
+        await client.set_attitude_nowait(yaw_deg=10.0, pitch_deg=-15.0)
+
+        # Single-axis variant.
+        await client.set_single_axis_nowait("yaw", 45.0)
+
+        # Always stop the gimbal when your loop exits.
+        await client.rotate_nowait(0, 0)
+
+asyncio.run(main())
+```
+
+Feedback for the loop should come from the attitude push stream
+(`client.on_attitude(...)`) at 50 or 100 Hz, **not** from polling
+`get_gimbal_attitude()`. The 0x0E ACK reports the gimbal's attitude at
+ACK time, not the achieved target, which makes it useless for
+closed-loop control.
+
+**Mechanical limits.** Range constants for the A8 mini are exported
+from `siyi_sdk.constants`:
+
+```python
+from siyi_sdk.constants import (
+    A8MINI_YAW_MIN_DEG, A8MINI_YAW_MAX_DEG,        # ±135°
+    A8MINI_PITCH_MIN_DEG, A8MINI_PITCH_MAX_DEG,    # -90° .. +25°
+    GIMBAL_RATE_CMD_MIN, GIMBAL_RATE_CMD_MAX,      # -100 .. 100
+)
+```
+
+Use them to clamp your setpoints — the gimbal will refuse out-of-range
+commands or saturate silently otherwise.
+
 ## More Examples
 
 For runnable command examples, see the `examples/` directory:

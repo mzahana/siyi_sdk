@@ -253,6 +253,24 @@ class TestHardwareIDs:
         assert constants.HW_ID_QUAD_SPECTRUM == 0x7A
 
 
+class TestA8MiniLimits:
+    """Test A8 mini mechanical limit constants."""
+
+    def test_yaw_limits_symmetric(self):
+        assert constants.A8MINI_YAW_MIN_DEG == -135.0
+        assert constants.A8MINI_YAW_MAX_DEG == 135.0
+
+    def test_pitch_limits_asymmetric(self):
+        # Pitch is asymmetric: more down travel than up.
+        assert constants.A8MINI_PITCH_MIN_DEG == -90.0
+        assert constants.A8MINI_PITCH_MAX_DEG == 25.0
+        assert constants.A8MINI_PITCH_MIN_DEG < constants.A8MINI_PITCH_MAX_DEG
+
+    def test_rate_command_range(self):
+        assert constants.GIMBAL_RATE_CMD_MIN == -100
+        assert constants.GIMBAL_RATE_CMD_MAX == 100
+
+
 class TestNoMagicHexLiterals:
     """Test that hex literals only appear in constants.py."""
 

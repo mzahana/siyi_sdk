@@ -23,7 +23,7 @@ from siyi_sdk.stream import (
     build_rtsp_url,
 )
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 __all__ = [
     "CAMERA_GENERATION_MAP",
     "CameraGeneration",

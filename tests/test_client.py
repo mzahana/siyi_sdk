@@ -890,6 +890,115 @@ class TestGimbalCommands:
         await client.close()
 
     @pytest.mark.asyncio
+    async def test_rotate_nowait(self, mock_transport: MockTransport) -> None:
+        """rotate_nowait sends a 0x07 frame with CTRL=0 and does not wait for ACK."""
+        client = SIYIClient(mock_transport)
+        await client.connect()
+
+        # Note: no queue_response — fire-and-forget must not block.
+        await client.rotate_nowait(50, -25)
+
+        assert len(mock_transport.sent_frames) == 1
+        sent = Frame.from_bytes(mock_transport.sent_frames[0])
+        assert sent.cmd_id == 0x07
+        assert sent.ctrl == 0  # need_ack must be cleared
+        # Payload: 2 x int8 little-endian.
+        assert sent.data == b"\x32\xe7"  # 50, -25
+
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_rotate_nowait_range_validation(
+        self, mock_transport: MockTransport
+    ) -> None:
+        """rotate_nowait still validates the -100..100 range."""
+        from siyi_sdk.exceptions import ConfigurationError
+
+        client = SIYIClient(mock_transport)
+        await client.connect()
+
+        with pytest.raises(ConfigurationError):
+            await client.rotate_nowait(150, 0)
+        with pytest.raises(ConfigurationError):
+            await client.rotate_nowait(0, -200)
+
+        # Failed encodes must not have been transmitted.
+        assert len(mock_transport.sent_frames) == 0
+
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_rotate_nowait_high_rate_throughput(
+        self, mock_transport: MockTransport
+    ) -> None:
+        """Many back-to-back fire-and-forget rotates must not deadlock.
+
+        The standard rotate() serialises on a per-CMD_ID lock waiting for
+        ACKs; rotate_nowait() must bypass that and accept a burst.
+        """
+        client = SIYIClient(mock_transport)
+        await client.connect()
+
+        for i in range(200):
+            await client.rotate_nowait(i % 100, -(i % 100))
+
+        assert len(mock_transport.sent_frames) == 200
+        # Every frame must have CTRL=0.
+        for raw in mock_transport.sent_frames:
+            assert Frame.from_bytes(raw).ctrl == 0
+
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_set_attitude_nowait(self, mock_transport: MockTransport) -> None:
+        """set_attitude_nowait sends a 0x0E frame with CTRL=0."""
+        client = SIYIClient(mock_transport)
+        await client.connect()
+
+        await client.set_attitude_nowait(45.0, -30.0)
+
+        assert len(mock_transport.sent_frames) == 1
+        sent = Frame.from_bytes(mock_transport.sent_frames[0])
+        assert sent.cmd_id == 0x0E
+        assert sent.ctrl == 0
+        # 4-byte payload, int16 little-endian, angles * 10.
+        assert sent.data == b"\xc2\x01\xd4\xfe"  # 450, -300
+
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_set_single_axis_nowait_yaw(
+        self, mock_transport: MockTransport
+    ) -> None:
+        """set_single_axis_nowait('yaw', ...) sends 0x41 with axis byte = 0."""
+        client = SIYIClient(mock_transport)
+        await client.connect()
+
+        await client.set_single_axis_nowait("yaw", 90.0)
+
+        sent = Frame.from_bytes(mock_transport.sent_frames[0])
+        assert sent.cmd_id == 0x41
+        assert sent.ctrl == 0
+
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_set_single_axis_nowait_pitch(
+        self, mock_transport: MockTransport
+    ) -> None:
+        """set_single_axis_nowait('pitch', ...) sends 0x41 with axis byte = 1."""
+        client = SIYIClient(mock_transport)
+        await client.connect()
+
+        await client.set_single_axis_nowait("pitch", -45.0)
+
+        sent = Frame.from_bytes(mock_transport.sent_frames[0])
+        assert sent.cmd_id == 0x41
+        assert sent.ctrl == 0
+
+        await client.close()
+
+    @pytest.mark.asyncio
     async def test_get_gimbal_mode(self, mock_transport: MockTransport) -> None:
         """Test get_gimbal_mode."""
         client = SIYIClient(mock_transport)

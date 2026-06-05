@@ -429,3 +429,18 @@ HW_ID_A8_MINI: Final[int] = 0x73
 HW_ID_A2_MINI: Final[int] = 0x75
 HW_ID_ZR30: Final[int] = 0x78
 HW_ID_QUAD_SPECTRUM: Final[int] = 0x7A
+
+# =============================================================================
+# A8 mini mechanical limits (degrees)
+# =============================================================================
+# Source: SIYI A8 mini user manual. Yaw is symmetric; pitch is asymmetric
+# (more travel down than up).
+
+A8MINI_YAW_MIN_DEG: Final[float] = -135.0
+A8MINI_YAW_MAX_DEG: Final[float] = 135.0
+A8MINI_PITCH_MIN_DEG: Final[float] = -90.0
+A8MINI_PITCH_MAX_DEG: Final[float] = 25.0
+
+# Velocity command range for CMD 0x07 (gimbal rotation).
+GIMBAL_RATE_CMD_MIN: Final[int] = -100
+GIMBAL_RATE_CMD_MAX: Final[int] = 100

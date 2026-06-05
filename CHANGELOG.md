@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-06-05
+
+### Added
+
+- **Fire-and-forget gimbal control** for high-rate (50–100 Hz) control
+  loops such as visual servoing:
+  - `SIYIClient.rotate_nowait(yaw, pitch)` — velocity command without
+    ACK round-trip or per-CMD_ID lock contention (0x07).
+  - `SIYIClient.set_attitude_nowait(yaw_deg, pitch_deg)` — absolute
+    attitude setpoint without ACK (0x0E).
+  - `SIYIClient.set_single_axis_nowait(axis, angle_deg)` — single-axis
+    variant (0x41).
+- A8 mini mechanical-limit constants in `siyi_sdk.constants`:
+  `A8MINI_YAW_MIN_DEG`, `A8MINI_YAW_MAX_DEG`,
+  `A8MINI_PITCH_MIN_DEG`, `A8MINI_PITCH_MAX_DEG`,
+  `GIMBAL_RATE_CMD_MIN`, `GIMBAL_RATE_CMD_MAX`.
+- Unit tests for all `_nowait` methods, including a 200-frame
+  back-to-back burst test that verifies the per-CMD_ID lock is
+  bypassed (would deadlock if it were not).
+- Quickstart documentation: new "High-rate control (fire-and-forget)"
+  section in `docs/quickstart.md`.
+
+### Notes
+
+- These additions are purely additive and backwards-compatible. The
+  existing `rotate()`, `set_attitude()`, and `set_single_axis()`
+  methods are unchanged and still wait for the ACK.
+
 ## [0.5.0] - 2026-04-22
 
 ### Added

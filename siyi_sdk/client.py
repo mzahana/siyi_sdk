@@ -816,6 +816,49 @@ class SIYIClient:
         ack = await self._send_command(0x41, payload)
         return commands.decode_single_axis_ack(ack)
 
+    async def rotate_nowait(self, yaw: int, pitch: int) -> None:
+        """Send a gimbal velocity command without waiting for an ACK.
+
+        Intended for high-rate control loops (e.g. visual servoing at
+        50–100 Hz) where ACK round-trip latency and per-CMD_ID serialisation
+        would stall the sender. The standard `rotate()` is preferred for
+        one-shot commands where you want confirmation.
+
+        Args:
+            yaw: Yaw velocity (-100 to 100, 0 = stop).
+            pitch: Pitch velocity (-100 to 100, 0 = stop).
+        """
+        payload = commands.encode_rotation(yaw, pitch)
+        await self._send_command(0x07, payload, expect_response=False)
+
+    async def set_attitude_nowait(self, yaw_deg: float, pitch_deg: float) -> None:
+        """Send a gimbal position setpoint without waiting for an ACK.
+
+        Fire-and-forget variant of `set_attitude()`. The ACK from 0x0E
+        only reports the gimbal's attitude at receipt time (not the
+        achieved target), so for closed-loop control you should rely on
+        the attitude push stream (`on_attitude`) for feedback instead.
+
+        Args:
+            yaw_deg: Target yaw angle in degrees.
+            pitch_deg: Target pitch angle in degrees.
+        """
+        payload = commands.encode_set_attitude(yaw_deg, pitch_deg)
+        await self._send_command(0x0E, payload, expect_response=False)
+
+    async def set_single_axis_nowait(
+        self, axis: Literal["yaw", "pitch"], angle_deg: float
+    ) -> None:
+        """Send a single-axis position setpoint without waiting for an ACK.
+
+        Args:
+            axis: Axis to control ("yaw" or "pitch").
+            angle_deg: Target angle in degrees.
+        """
+        axis_int = 0 if axis == "yaw" else 1
+        payload = commands.encode_single_axis(angle_deg, axis_int)
+        await self._send_command(0x41, payload, expect_response=False)
+
     async def get_gimbal_mode(self) -> GimbalMotionMode:
         """Request current gimbal motion mode.
 
