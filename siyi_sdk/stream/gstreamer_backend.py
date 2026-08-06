@@ -44,6 +44,16 @@ _log: Final = structlog.get_logger(__name__)
 
 _RECONNECT_DELAY_CAP: Final[float] = 30.0
 
+# No decoded frame for this long while the pipeline claims to be PLAYING means
+# the stream has silently stalled. rtspsrc does not always post EOS when RTP
+# simply stops arriving (common on a lossy link), so a timeout is the only
+# reliable way to notice. Must exceed the largest expected inter-frame gap.
+_STALL_TIMEOUT: Final[float] = 5.0
+
+# Streaming healthily for this long resets the reconnect back-off, so an
+# outage hours into a flight starts retrying fast rather than at the cap.
+_HEALTHY_RESET_AFTER: Final[float] = 30.0
+
 # Desktop / generic pipeline. decodebin auto-negotiates H.264/H.265 from the
 # RTSP SDP, videoconvert produces BGR on the CPU. Used on non-Jetson hosts.
 _AUTO_PIPELINE = (
@@ -115,7 +125,15 @@ class GStreamerBackend(AbstractStreamBackend):
         self._latest: deque[StreamFrame] = deque(maxlen=1)
         self._pipeline: Gst.Pipeline | None = None
         self._glib_thread: threading.Thread | None = None
+        # Set only by disconnect(); means "the user asked us to stop". A dead
+        # pipeline must never set this, or frame_generator() would terminate
+        # and the stream could not be resurrected.
         self._stop_event = threading.Event()
+        # Monotonic timestamp of the last decoded frame; 0.0 until the first
+        # frame arrives. Drives both stall detection and reconnect back-off.
+        self._last_frame_time: float = 0.0
+        self._reconnect_count: int = 0
+        self._last_restart: float = 0.0
 
     def _build_pipeline_str(self) -> str:
         """Build the GStreamer pipeline string from configuration.
@@ -140,46 +158,80 @@ class GStreamerBackend(AbstractStreamBackend):
             codec=self._codec,
         )
 
-    async def connect(self) -> None:
-        """Build the GStreamer pipeline and start the GLib main loop thread."""
-        self._stop_event.clear()
-        self._loop = asyncio.get_event_loop()
-        self._queue = asyncio.Queue(maxsize=1)
+    def _start_pipeline(self) -> None:
+        """Build the pipeline and set it PLAYING. Safe to call repeatedly.
 
+        Raises:
+            GLib.Error: If the pipeline description fails to parse.
+        """
         pipeline_str = self._build_pipeline_str()
         _log.info("gstreamer_pipeline", pipeline=pipeline_str)
 
         self._pipeline = Gst.parse_launch(pipeline_str)
         sink = self._pipeline.get_by_name("sink")
         sink.connect("new-sample", self._on_sample)
+        self._pipeline.set_state(Gst.State.PLAYING)
+        # Treat start as "just saw a frame" so the stall detector gives the
+        # pipeline a full _STALL_TIMEOUT to produce its first frame.
+        self._last_frame_time = time.monotonic()
 
-        bus = self._pipeline.get_bus()
-        # Poll bus messages in a plain thread instead of a GLib.MainLoop.
+    def _stop_pipeline(self) -> None:
+        """Tear the current pipeline down to NULL and drop the reference."""
+        if self._pipeline is not None:
+            self._pipeline.set_state(Gst.State.NULL)
+            self._pipeline = None
+
+    async def connect(self) -> None:
+        """Build the GStreamer pipeline and start the supervisor thread."""
+        self._stop_event.clear()
+        self._loop = asyncio.get_event_loop()
+        self._queue = asyncio.Queue(maxsize=1)
+        self._reconnect_count = 0
+
+        self._start_pipeline()
+
+        # Supervise the pipeline in a plain thread instead of a GLib.MainLoop.
         # A running GLib.MainLoop holds the GLib type-system lock, which blocks
         # GTK3 initialisation in the main thread (e.g. cv2.imshow). Polling
         # with timed_pop_filtered() achieves the same error/EOS detection
         # without occupying the GLib lock.
         self._glib_thread = threading.Thread(
-            target=self._poll_bus,
-            args=(bus,),
+            target=self._supervise,
             name="siyi-gst-bus",
             daemon=True,
         )
         self._glib_thread.start()
 
-        self._pipeline.set_state(Gst.State.PLAYING)
         _log.info("gstreamer_backend_connected", url=self._config.rtsp_url)
 
     async def disconnect(self) -> None:
         """Stop the pipeline and release resources."""
         self._stop_event.set()
-        if self._pipeline is not None:
-            self._pipeline.set_state(Gst.State.NULL)
-            self._pipeline = None
+        self._stop_pipeline()
         if self._glib_thread is not None:
             self._glib_thread.join(timeout=5.0)
             self._glib_thread = None
         _log.info("gstreamer_backend_disconnected")
+
+    @property
+    def seconds_since_last_frame(self) -> float:
+        """Seconds since the last decoded frame, or ``inf`` if none yet.
+
+        Returns:
+            Age of the newest frame in seconds.
+        """
+        if self._last_frame_time == 0.0:
+            return float("inf")
+        return time.monotonic() - self._last_frame_time
+
+    @property
+    def reconnect_count(self) -> int:
+        """Number of pipeline rebuilds performed since connect().
+
+        Returns:
+            Reconnect attempt count.
+        """
+        return self._reconnect_count
 
     def frame_available(self) -> bool:
         """Return True if a frame is buffered.
@@ -212,28 +264,101 @@ class GStreamerBackend(AbstractStreamBackend):
             except asyncio.TimeoutError:
                 continue
 
-    def _poll_bus(self, bus: object) -> None:
-        """Poll the GStreamer bus for error and EOS messages.
+    def _supervise(self) -> None:
+        """Watch the pipeline and rebuild it whenever it dies.
 
         Runs in a daemon thread. Uses timed_pop_filtered so no GLib.MainLoop
         is needed, keeping the GLib type-system lock free for the main thread.
+
+        A pipeline dies in two distinguishable ways, and both are recoverable:
+
+        * It posts ERROR or EOS on the bus. rtspsrc does this when the RTSP
+          session is torn down by the camera or the transport fails.
+        * It silently stops producing frames. On a lossy link rtspsrc can sit
+          in PLAYING with RTP no longer arriving and never post anything, so
+          only ``_STALL_TIMEOUT`` catches it.
+
+        Neither sets ``_stop_event`` — that belongs to ``disconnect()`` alone.
         """
-        gst_bus = cast("Gst.Bus", bus)
-        interval = Gst.MSECOND * 100
+        delay = self._config.reconnect_delay
+        max_attempts = self._config.max_reconnect_attempts
+
         while not self._stop_event.is_set():
-            msg = gst_bus.timed_pop_filtered(
-                interval,
-                Gst.MessageType.ERROR | Gst.MessageType.EOS,
+            pipeline = self._pipeline
+
+            if pipeline is None:
+                # A previous restart attempt raised. Keep retrying rather than
+                # leaving the stream dead — that is the bug this loop exists
+                # to prevent.
+                reason = "pipeline not running"
+            else:
+                msg = pipeline.get_bus().timed_pop_filtered(
+                    Gst.MSECOND * 100,
+                    Gst.MessageType.ERROR | Gst.MessageType.EOS,
+                )
+                stalled = time.monotonic() - self._last_frame_time > _STALL_TIMEOUT
+
+                if msg is None and not stalled:
+                    # Healthy. Once we have been streaming a while, forget any
+                    # back-off accumulated by earlier outages.
+                    if (
+                        self._reconnect_count
+                        and time.monotonic() - self._last_restart > _HEALTHY_RESET_AFTER
+                    ):
+                        delay = self._config.reconnect_delay
+                        self._reconnect_count = 0
+                    continue
+
+                if msg is None:
+                    reason = f"no frames for {_STALL_TIMEOUT:.0f}s"
+                    _log.warning("gst_pipeline_stalled", timeout_s=_STALL_TIMEOUT)
+                elif msg.type == Gst.MessageType.ERROR:
+                    err, debug = msg.parse_error()
+                    reason = str(err)
+                    _log.error("gst_pipeline_error", error=reason, debug=debug)
+                else:
+                    reason = "end-of-stream"
+                    _log.warning("gst_pipeline_eos")
+
+                self._stop_pipeline()
+
+            if self._stop_event.is_set():
+                break
+
+            self._reconnect_count += 1
+            if max_attempts and self._reconnect_count > max_attempts:
+                _log.error(
+                    "gst_reconnect_giving_up",
+                    attempts=self._reconnect_count - 1,
+                    reason=reason,
+                )
+                self._stop_event.set()
+                break
+
+            _log.warning(
+                "gst_reconnecting",
+                attempt=self._reconnect_count,
+                delay_s=round(delay, 1),
+                reason=reason,
             )
-            if msg is None:
-                continue
-            if msg.type == Gst.MessageType.ERROR:
-                err, _debug = msg.parse_error()
-                _log.error("gst_pipeline_error", error=str(err))
-                self._stop_event.set()
-            elif msg.type == Gst.MessageType.EOS:
-                _log.warning("gst_pipeline_eos")
-                self._stop_event.set()
+
+            # Interruptible sleep so disconnect() stays responsive during back-off.
+            if self._stop_event.wait(timeout=delay):
+                break
+
+            try:
+                self._start_pipeline()
+                self._last_restart = time.monotonic()
+                _log.info("gst_reconnected", attempt=self._reconnect_count)
+            except Exception as exc:
+                _log.error(
+                    "gst_reconnect_failed",
+                    attempt=self._reconnect_count,
+                    exc=type(exc).__name__,
+                    msg=str(exc),
+                )
+
+            delay = min(delay * 2.0, _RECONNECT_DELAY_CAP)
 
     def _on_sample(self, sink: object) -> object:
         """GStreamer appsink new-sample signal handler.
@@ -283,6 +408,8 @@ class GStreamerBackend(AbstractStreamBackend):
                 backend=self.BACKEND_NAME,
             )
             self._latest.append(sf)
+            # Feeds the supervisor's stall detector.
+            self._last_frame_time = sf.timestamp
 
             _log.debug(
                 "gst_frame_decoded",
