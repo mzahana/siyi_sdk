@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- `one_key_centering()` defaults to `CenteringAction.ONE_KEY_CENTER` (code 1).
+  The old default, `CENTER` (code 3), is acknowledged by an A8 mini but leaves
+  the camera where it is (e.g. at pitch -90). The web UI's center button sent
+  code 3 explicitly and now sends code 1.
+
 ## [0.6.0] - 2026-06-05
 
 ### Added

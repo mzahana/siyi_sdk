@@ -257,7 +257,7 @@ async def center():
     if not state.client:
         raise HTTPException(status_code=503, detail="Camera not connected")
     try:
-        await state.client.one_key_centering(CenteringAction.CENTER)
+        await state.client.one_key_centering(CenteringAction.ONE_KEY_CENTER)
     except Exception as e:
         logger.error(f"Center command failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))

@@ -775,11 +775,15 @@ class SIYIClient:
         ack = await self._send_command(0x07, payload)
         commands.decode_rotation_ack(ack)
 
-    async def one_key_centering(self, action: CenteringAction = CenteringAction.CENTER) -> None:
+    async def one_key_centering(
+        self, action: CenteringAction = CenteringAction.ONE_KEY_CENTER
+    ) -> None:
         """Execute one-key centering action.
 
         Args:
-            action: Centering action type.
+            action: Centering action type. The default, ONE_KEY_CENTER (code 1),
+                levels the camera. CENTER (code 3) is acknowledged by an A8 mini
+                but leaves the camera where it is, e.g. at pitch -90.
         """
         payload = commands.encode_one_key_centering(action)
         ack = await self._send_command(0x08, payload)

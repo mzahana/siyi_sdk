@@ -66,7 +66,11 @@ class MountingDirection(IntEnum):
 
 
 class CenteringAction(IntEnum):
-    """One-key centering action types."""
+    """One-key centering action types.
+
+    To level the camera use ONE_KEY_CENTER. An A8 mini acks CENTER (3) with
+    success but does not move the camera back from pitch -90.
+    """
 
     ONE_KEY_CENTER = 1
     CENTER_DOWNWARD = 2

@@ -856,6 +856,25 @@ class TestGimbalCommands:
         await client.close()
 
     @pytest.mark.asyncio
+    async def test_one_key_centering_default_levels_camera(
+        self, mock_transport: MockTransport
+    ) -> None:
+        """The default action is code 1: an A8 mini ignores code 3 (CENTER)."""
+        client = SIYIClient(mock_transport)
+        await client.connect()
+
+        ack_frame = Frame.build(0x08, b"\x01", seq=0, need_ack=False)
+        mock_transport.queue_response(ack_frame.to_bytes())
+
+        await client.one_key_centering()
+
+        sent = mock_transport.sent_frames[-1]
+        assert sent[7] == 0x08  # CMD_ID
+        assert sent[8:-2] == b"\x01"  # payload, before the CRC16
+
+        await client.close()
+
+    @pytest.mark.asyncio
     async def test_set_attitude(self, mock_transport: MockTransport) -> None:
         """Test set_attitude."""
         client = SIYIClient(mock_transport)
